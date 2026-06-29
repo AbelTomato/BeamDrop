@@ -1,4 +1,5 @@
 #include "beamdrop/network/TcpConnection.hpp"
+#include <climits>
 
 #include "SocketPlatform.hpp"
 
