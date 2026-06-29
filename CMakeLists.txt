@@ -1,0 +1,212 @@
+cmake_minimum_required(VERSION 3.20)
+
+project(BeamDrop
+    VERSION 0.1.0
+    DESCRIPTION "BeamDrop / 邻光 - LAN file transfer CLI"
+    LANGUAGES CXX
+)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+add_executable(beamdrop
+    src/main.cpp
+    src/filesystem/FileScanner.cpp
+    src/filesystem/FileUtils.cpp
+    src/network/TcpClient.cpp
+    src/network/TcpConnection.cpp
+    src/network/TcpServer.cpp
+    src/protocol/PacketIO.cpp
+    src/protocol/PacketParser.cpp
+    src/protocol/Serializer.cpp
+    src/transfer/FileInfoCodec.cpp
+    src/transfer/Receiver.cpp
+    src/transfer/Sender.cpp
+    src/utils/Sha256.cpp
+)
+
+target_include_directories(beamdrop
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
+
+if (MSVC)
+    target_compile_options(beamdrop PRIVATE /W4)
+else()
+    target_compile_options(beamdrop PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+if (WIN32)
+    target_link_libraries(beamdrop PRIVATE ws2_32)
+endif()
+
+enable_testing()
+
+add_executable(protocol_tests
+    tests/unit/protocol_tests.cpp
+    src/protocol/PacketParser.cpp
+    src/protocol/Serializer.cpp
+)
+
+target_include_directories(protocol_tests
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
+
+if (MSVC)
+    target_compile_options(protocol_tests PRIVATE /W4)
+else()
+    target_compile_options(protocol_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_test(NAME protocol_tests COMMAND protocol_tests)
+
+add_executable(sha256_tests
+    tests/unit/sha256_tests.cpp
+    src/utils/Sha256.cpp
+)
+
+target_include_directories(sha256_tests
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
+
+if (MSVC)
+    target_compile_options(sha256_tests PRIVATE /W4)
+else()
+    target_compile_options(sha256_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_test(NAME sha256_tests COMMAND sha256_tests)
+
+add_executable(file_scanner_tests
+    tests/unit/file_scanner_tests.cpp
+    src/filesystem/FileScanner.cpp
+    src/filesystem/FileUtils.cpp
+)
+
+target_include_directories(file_scanner_tests
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
+
+if (MSVC)
+    target_compile_options(file_scanner_tests PRIVATE /W4)
+else()
+    target_compile_options(file_scanner_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_test(NAME file_scanner_tests COMMAND file_scanner_tests)
+
+add_executable(file_info_codec_tests
+    tests/unit/file_info_codec_tests.cpp
+    src/transfer/FileInfoCodec.cpp
+)
+
+target_include_directories(file_info_codec_tests
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
+
+if (MSVC)
+    target_compile_options(file_info_codec_tests PRIVATE /W4)
+else()
+    target_compile_options(file_info_codec_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_test(NAME file_info_codec_tests COMMAND file_info_codec_tests)
+
+add_executable(tcp_hello_tests
+    tests/integration/tcp_hello_tests.cpp
+    src/network/TcpClient.cpp
+    src/network/TcpConnection.cpp
+    src/network/TcpServer.cpp
+    src/protocol/PacketIO.cpp
+    src/protocol/PacketParser.cpp
+    src/protocol/Serializer.cpp
+)
+
+target_include_directories(tcp_hello_tests
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
+
+if (MSVC)
+    target_compile_options(tcp_hello_tests PRIVATE /W4)
+else()
+    target_compile_options(tcp_hello_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+if (WIN32)
+    target_link_libraries(tcp_hello_tests PRIVATE ws2_32)
+endif()
+
+add_test(NAME tcp_hello_tests COMMAND tcp_hello_tests)
+
+add_executable(single_file_transfer_tests
+    tests/integration/single_file_transfer_tests.cpp
+    src/filesystem/FileScanner.cpp
+    src/filesystem/FileUtils.cpp
+    src/network/TcpClient.cpp
+    src/network/TcpConnection.cpp
+    src/network/TcpServer.cpp
+    src/protocol/PacketIO.cpp
+    src/protocol/PacketParser.cpp
+    src/protocol/Serializer.cpp
+    src/transfer/FileInfoCodec.cpp
+    src/transfer/Receiver.cpp
+    src/transfer/Sender.cpp
+    src/utils/Sha256.cpp
+)
+
+target_include_directories(single_file_transfer_tests
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
+
+if (MSVC)
+    target_compile_options(single_file_transfer_tests PRIVATE /W4)
+else()
+    target_compile_options(single_file_transfer_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+if (WIN32)
+    target_link_libraries(single_file_transfer_tests PRIVATE ws2_32)
+endif()
+
+add_test(NAME single_file_transfer_tests COMMAND single_file_transfer_tests)
+
+add_executable(directory_transfer_tests
+    tests/integration/directory_transfer_tests.cpp
+    src/filesystem/FileScanner.cpp
+    src/filesystem/FileUtils.cpp
+    src/network/TcpClient.cpp
+    src/network/TcpConnection.cpp
+    src/network/TcpServer.cpp
+    src/protocol/PacketIO.cpp
+    src/protocol/PacketParser.cpp
+    src/protocol/Serializer.cpp
+    src/transfer/FileInfoCodec.cpp
+    src/transfer/Receiver.cpp
+    src/transfer/Sender.cpp
+    src/utils/Sha256.cpp
+)
+
+target_include_directories(directory_transfer_tests
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
+
+if (MSVC)
+    target_compile_options(directory_transfer_tests PRIVATE /W4)
+else()
+    target_compile_options(directory_transfer_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+if (WIN32)
+    target_link_libraries(directory_transfer_tests PRIVATE ws2_32)
+endif()
+
+add_test(NAME directory_transfer_tests COMMAND directory_transfer_tests)

@@ -1,0 +1,19 @@
+# Build outputs
+build/
+build-*/
+out/
+cmake-build-*/
+Testing/
+
+# Runtime files
+received/
+logs/
+transfer_state.json
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store

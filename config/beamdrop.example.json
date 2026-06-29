@@ -1,0 +1,17 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 9090,
+    "save_dir": "./received"
+  },
+  "transfer": {
+    "chunk_size": 1048576,
+    "enable_resume": true,
+    "verify_sha256": true,
+    "state_file": "./transfer_state.json"
+  },
+  "log": {
+    "level": "info",
+    "file": "./logs/beamdrop.log"
+  }
+}
