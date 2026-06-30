@@ -13,8 +13,10 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_executable(beamdrop
     src/main.cpp
+    src/config/AppConfig.cpp
     src/filesystem/FileScanner.cpp
     src/filesystem/FileUtils.cpp
+    src/logger/Logger.cpp
     src/network/TcpClient.cpp
     src/network/TcpConnection.cpp
     src/network/TcpServer.cpp
@@ -24,6 +26,7 @@ add_executable(beamdrop
     src/transfer/FileInfoCodec.cpp
     src/transfer/Receiver.cpp
     src/transfer/Sender.cpp
+    src/transfer/TransferManifest.cpp
     src/utils/Sha256.cpp
 )
 
@@ -100,6 +103,60 @@ endif()
 
 add_test(NAME file_scanner_tests COMMAND file_scanner_tests)
 
+add_executable(logger_tests
+    tests/unit/logger_tests.cpp
+    src/logger/Logger.cpp
+)
+
+target_include_directories(logger_tests
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
+
+if (MSVC)
+    target_compile_options(logger_tests PRIVATE /W4)
+else()
+    target_compile_options(logger_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_test(NAME logger_tests COMMAND logger_tests)
+
+add_executable(config_tests
+    tests/unit/config_tests.cpp
+    src/config/AppConfig.cpp
+)
+
+target_include_directories(config_tests
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
+
+if (MSVC)
+    target_compile_options(config_tests PRIVATE /W4)
+else()
+    target_compile_options(config_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_test(NAME config_tests COMMAND config_tests)
+
+add_executable(transfer_manifest_tests
+    tests/unit/transfer_manifest_tests.cpp
+    src/transfer/TransferManifest.cpp
+)
+
+target_include_directories(transfer_manifest_tests
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
+
+if (MSVC)
+    target_compile_options(transfer_manifest_tests PRIVATE /W4)
+else()
+    target_compile_options(transfer_manifest_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_test(NAME transfer_manifest_tests COMMAND transfer_manifest_tests)
+
 add_executable(file_info_codec_tests
     tests/unit/file_info_codec_tests.cpp
     src/transfer/FileInfoCodec.cpp
@@ -158,6 +215,7 @@ add_executable(single_file_transfer_tests
     src/transfer/FileInfoCodec.cpp
     src/transfer/Receiver.cpp
     src/transfer/Sender.cpp
+    src/transfer/TransferManifest.cpp
     src/utils/Sha256.cpp
 )
 
@@ -191,6 +249,7 @@ add_executable(directory_transfer_tests
     src/transfer/FileInfoCodec.cpp
     src/transfer/Receiver.cpp
     src/transfer/Sender.cpp
+    src/transfer/TransferManifest.cpp
     src/utils/Sha256.cpp
 )
 

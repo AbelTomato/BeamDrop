@@ -2,8 +2,13 @@
 #include "beamdrop/filesystem/FileUtils.hpp"
 #include "beamdrop/network/TcpClient.hpp"
 #include "beamdrop/network/TcpServer.hpp"
+#include "beamdrop/protocol/Packet.hpp"
+#include "beamdrop/protocol/PacketIO.hpp"
+#include "beamdrop/protocol/PacketType.hpp"
+#include "beamdrop/transfer/Progress.hpp"
 #include "beamdrop/transfer/Receiver.hpp"
 #include "beamdrop/transfer/Sender.hpp"
+#include "beamdrop/transfer/TransferManifest.hpp"
 
 #include <cassert>
 #include <chrono>
@@ -16,8 +21,14 @@
 
 using beamdrop::network::TcpClient;
 using beamdrop::network::TcpServer;
+using beamdrop::protocol::Packet;
+using beamdrop::protocol::PacketType;
+using beamdrop::transfer::ProgressDirection;
+using beamdrop::transfer::ProgressEvent;
 using beamdrop::transfer::Receiver;
 using beamdrop::transfer::Sender;
+using beamdrop::transfer::TransferManifest;
+using beamdrop::transfer::TransferManifestCodec;
 
 int main() {
     constexpr std::uint16_t port = 19092;
@@ -45,14 +56,30 @@ int main() {
 
     const auto entries = beamdrop::filesystem::scan_files(send_dir);
     assert(entries.size() == 3);
+    std::uint64_t total_bytes = 0;
+    for (const auto& entry : entries) {
+        total_bytes += entry.size;
+    }
 
     std::exception_ptr server_error;
+    TransferManifest received_manifest;
+    std::vector<ProgressEvent> receive_completed;
     std::thread server_thread([&] {
         try {
             TcpServer server{"127.0.0.1", port};
             auto connection = server.accept_one();
-            Receiver receiver{connection};
-            receiver.receive_files(receive_dir, entries.size());
+            const auto hello = beamdrop::protocol::read_packet(connection);
+            assert(hello.header.type == PacketType::Hello);
+            received_manifest = TransferManifestCodec::decode(hello.payload);
+            assert(received_manifest.file_count == entries.size());
+            assert(received_manifest.total_bytes == total_bytes);
+
+            Receiver receiver{connection, [&](const ProgressEvent& event) {
+                                  if (event.file_complete) {
+                                      receive_completed.push_back(event);
+                                  }
+                              }};
+            receiver.receive_files(receive_dir, static_cast<std::size_t>(received_manifest.file_count));
         } catch (...) {
             server_error = std::current_exception();
         }
@@ -62,7 +89,18 @@ int main() {
 
     TcpClient client;
     auto connection = client.connect("127.0.0.1", port);
-    Sender sender{connection};
+    Packet hello;
+    hello.header.type = PacketType::Hello;
+    hello.payload = TransferManifestCodec::encode(
+        TransferManifest{static_cast<std::uint64_t>(entries.size()), total_bytes});
+    beamdrop::protocol::write_packet(connection, hello);
+
+    std::vector<ProgressEvent> send_completed;
+    Sender sender{connection, [&](const ProgressEvent& event) {
+                      if (event.file_complete) {
+                          send_completed.push_back(event);
+                      }
+                   }, 4};
     sender.send_files(entries);
 
     server_thread.join();
@@ -74,6 +112,24 @@ int main() {
     assert(beamdrop::filesystem::read_file(received_a) == content_a);
     assert(beamdrop::filesystem::read_file(received_b) == content_b);
     assert(beamdrop::filesystem::read_file(received_c) == content_c);
+
+    assert(send_completed.size() == entries.size());
+    assert(receive_completed.size() == entries.size());
+    for (std::size_t index = 0; index < entries.size(); ++index) {
+        assert(send_completed[index].direction == ProgressDirection::Send);
+        assert(send_completed[index].relative_path == entries[index].relative_path);
+        assert(send_completed[index].current_file_bytes == entries[index].size);
+        assert(send_completed[index].current_file_total_bytes == entries[index].size);
+        assert(send_completed[index].file_index == index + 1);
+        assert(send_completed[index].file_count == entries.size());
+
+        assert(receive_completed[index].direction == ProgressDirection::Receive);
+        assert(receive_completed[index].relative_path == entries[index].relative_path);
+        assert(receive_completed[index].current_file_bytes == entries[index].size);
+        assert(receive_completed[index].current_file_total_bytes == entries[index].size);
+        assert(receive_completed[index].file_index == index + 1);
+        assert(receive_completed[index].file_count == entries.size());
+    }
 
     std::filesystem::remove_all(base_dir);
 

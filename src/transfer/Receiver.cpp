@@ -31,9 +31,16 @@ std::filesystem::path safe_join(const std::filesystem::path& save_dir,
 
 } // namespace
 
-Receiver::Receiver(const network::TcpConnection& connection) : connection_(connection) {}
+Receiver::Receiver(const network::TcpConnection& connection, ProgressCallback progress_callback)
+    : connection_(connection), progress_callback_(std::move(progress_callback)) {}
 
 void Receiver::receive_one_file(const std::filesystem::path& save_dir) const {
+    receive_one_file(save_dir, 1, 1);
+}
+
+void Receiver::receive_one_file(const std::filesystem::path& save_dir,
+                                std::size_t file_index,
+                                std::size_t file_count) const {
     const auto info_packet = protocol::read_packet(connection_);
     if (info_packet.header.type != protocol::PacketType::FileInfo) {
         throw std::runtime_error("expected FILE_INFO packet");
@@ -76,6 +83,16 @@ void Receiver::receive_one_file(const std::filesystem::path& save_dir) const {
                 throw std::runtime_error("failed to write output file: " + output_path.string());
             }
         }
+
+        if (progress_callback_) {
+            progress_callback_(ProgressEvent{ProgressDirection::Receive,
+                                             file_info.relative_path,
+                                             received_size,
+                                             file_info.size,
+                                             file_index,
+                                             file_count,
+                                             received_size == file_info.size});
+        }
     }
 
     output.close();
@@ -93,7 +110,7 @@ void Receiver::receive_one_file(const std::filesystem::path& save_dir) const {
 
 void Receiver::receive_files(const std::filesystem::path& save_dir, std::size_t file_count) const {
     for (std::size_t index = 0; index < file_count; ++index) {
-        receive_one_file(save_dir);
+        receive_one_file(save_dir, index + 1, file_count);
     }
 }
 

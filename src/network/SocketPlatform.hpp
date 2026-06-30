@@ -51,11 +51,7 @@ inline int last_socket_error() { return errno; }
 #endif
 
 inline SocketHandle to_socket_handle(std::intptr_t handle) {
-#ifdef _WIN32
     return static_cast<SocketHandle>(handle);
-#else
-    return static_cast<SocketHandle>(handle);
-#endif
 }
 
 inline std::intptr_t to_native_handle(SocketHandle handle) {
