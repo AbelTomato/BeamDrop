@@ -17,3 +17,5 @@ transfer_state.json
 # OS
 Thumbs.db
 .DS_Store
+
+docs/1.md

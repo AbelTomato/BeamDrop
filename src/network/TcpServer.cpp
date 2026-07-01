@@ -15,7 +15,11 @@ TcpServer::TcpServer(const std::string& host, std::uint16_t port) {
     }
 
     int yes = 1;
-    setsockopt(handle, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&yes), sizeof(yes));
+    if (setsockopt(handle, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char *>(&yes),
+                   sizeof(yes)) != 0) {
+        detail::close_socket(handle);
+        throw detail::socket_error("set socket REUSEADDR failed");
+    }
 
     sockaddr_in address{};
     address.sin_family = AF_INET;
