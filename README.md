@@ -86,6 +86,8 @@ ctest --test-dir build-mingw --output-on-failure
 build-mingw\beamdrop.exe serve --config config\beamdrop.example.json --host 127.0.0.1 --port 9090 --save-dir received --log-file logs\beamdrop.log
 ```
 
+`serve` 启动后会持续监听，可连续接收多次 `send`。当前退出方式为 Ctrl+C 或终止进程。
+
 参数：
 
 | 参数         | 默认值              | 说明                                   |

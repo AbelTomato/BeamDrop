@@ -191,6 +191,33 @@ ConfigOptions parse_config_options(int argc, char* argv[]) {
     return options;
 }
 
+std::uint64_t receive_transfer_session(const beamdrop::network::TcpConnection& connection,
+                                       const ServeOptions& options,
+                                       const beamdrop::logger::Logger& logger) {
+    const auto hello = beamdrop::protocol::read_packet(connection);
+    if (hello.header.type != beamdrop::protocol::PacketType::Hello) {
+        throw std::runtime_error("expected HELLO packet with transfer manifest");
+    }
+
+    const auto manifest = beamdrop::transfer::TransferManifestCodec::decode(hello.payload);
+    const auto file_count = manifest.file_count;
+    logger.info("serve receiving file_count=" + std::to_string(file_count)
+                + " total_bytes=" + std::to_string(manifest.total_bytes));
+
+    beamdrop::transfer::Receiver receiver{connection,
+                                          print_progress,
+                                          options.enable_resume,
+                                          options.state_file};
+    receiver.receive_files(options.save_dir, static_cast<std::size_t>(file_count));
+
+    const auto finish = beamdrop::protocol::read_packet(connection);
+    if (finish.header.type != beamdrop::protocol::PacketType::Finish) {
+        throw std::runtime_error("expected FINISH packet");
+    }
+
+    return file_count;
+}
+
 int run_serve(int argc, char* argv[]) {
     const auto options = parse_serve_options(argc, argv);
     const beamdrop::logger::Logger logger{options.log_file};
@@ -203,31 +230,18 @@ int run_serve(int argc, char* argv[]) {
         std::cout << "beamdrop serve listening on " << options.host << ':' << options.port
                   << ", save-dir=" << options.save_dir.string() << '\n';
 
-        auto connection = server.accept_one();
-        logger.info("serve accepted connection");
-        const auto hello = beamdrop::protocol::read_packet(connection);
-        if (hello.header.type != beamdrop::protocol::PacketType::Hello) {
-            throw std::runtime_error("expected HELLO packet with transfer manifest");
+        while (true) {
+            try {
+                auto connection = server.accept_one();
+                logger.info("serve accepted connection");
+                const auto file_count = receive_transfer_session(connection, options, logger);
+                std::cout << "beamdrop serve received " << file_count << " file(s)\n";
+                logger.info("serve completed file_count=" + std::to_string(file_count));
+            } catch (const std::exception& error) {
+                logger.error(std::string{"serve connection failed: "} + error.what());
+                std::cerr << "beamdrop serve connection error: " << error.what() << '\n';
+            }
         }
-
-        const auto manifest = beamdrop::transfer::TransferManifestCodec::decode(hello.payload);
-        const auto file_count = manifest.file_count;
-        logger.info("serve receiving file_count=" + std::to_string(file_count)
-                    + " total_bytes=" + std::to_string(manifest.total_bytes));
-        beamdrop::transfer::Receiver receiver{connection,
-                                              print_progress,
-                                              options.enable_resume,
-                                              options.state_file};
-        receiver.receive_files(options.save_dir, static_cast<std::size_t>(file_count));
-
-        const auto finish = beamdrop::protocol::read_packet(connection);
-        if (finish.header.type != beamdrop::protocol::PacketType::Finish) {
-            throw std::runtime_error("expected FINISH packet");
-        }
-
-        std::cout << "beamdrop serve received " << file_count << " file(s)\n";
-        logger.info("serve completed file_count=" + std::to_string(file_count));
-        return 0;
     } catch (const std::exception& error) {
         logger.error(std::string{"serve failed: "} + error.what());
         throw;

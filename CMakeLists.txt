@@ -347,3 +347,39 @@ if (WIN32)
 endif()
 
 add_test(NAME resume_transfer_tests COMMAND resume_transfer_tests)
+
+add_executable(persistent_serve_tests
+    tests/integration/persistent_serve_tests.cpp
+    src/filesystem/FileScanner.cpp
+    src/filesystem/FileUtils.cpp
+    src/network/TcpClient.cpp
+    src/network/TcpConnection.cpp
+    src/network/TcpServer.cpp
+    src/protocol/PacketIO.cpp
+    src/protocol/PacketParser.cpp
+    src/protocol/Serializer.cpp
+    src/transfer/FileInfoCodec.cpp
+    src/transfer/Receiver.cpp
+    src/transfer/ResumeAckCodec.cpp
+    src/transfer/ResumeManager.cpp
+    src/transfer/Sender.cpp
+    src/transfer/TransferManifest.cpp
+    src/utils/Sha256.cpp
+)
+
+target_include_directories(persistent_serve_tests
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
+
+if (MSVC)
+    target_compile_options(persistent_serve_tests PRIVATE /W4)
+else()
+    target_compile_options(persistent_serve_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+if (WIN32)
+    target_link_libraries(persistent_serve_tests PRIVATE ws2_32)
+endif()
+
+add_test(NAME persistent_serve_tests COMMAND persistent_serve_tests)
