@@ -98,15 +98,21 @@
 
 交付：
 
-- `ResumeManager`；
-- `transfer_state.json`；
-- `RESUME_REQ` / `RESUME_ACK` 流程。
+- `ResumeAckCodec`，支持 `RESUME_ACK` payload 编解码；
+- `ResumeManager`，支持 `transfer_state.json` 读取、写入、更新、查询和完成清理；
+- Receiver 在 `FILE_INFO` 后计算可信 offset 并回复 `RESUME_ACK`；
+- Sender 在 `FILE_INFO` 后读取 `RESUME_ACK`，从 offset 继续发送；
+- CLI `serve` 读取 `transfer.enable_resume` 和 `transfer.state_file`；
+- 断点续传端到端测试。
 
 验证：
 
-- 中断大文件传输；
-- 再次发送时从已有 offset 继续；
-- 最终 hash 一致。
+- `resume_ack_codec_tests` 覆盖 ACK 编解码和非法 payload；
+- `resume_manager_tests` 覆盖状态读写、offset 更新、完成清理和越界 offset 策略；
+- `single_file_transfer_tests` 覆盖 offset 大于 0 时发送端不重发前置字节；
+- `directory_transfer_tests` 覆盖多文件常规 `FILE_INFO -> RESUME_ACK -> DATA` 流程；
+- `resume_transfer_tests` 预置接收端部分文件和状态记录，验证再次发送完整源文件后最终内容和 SHA256 一致，且状态记录被清理；
+- 全量 CTest 通过。
 
 ### Step 8：文档回填
 

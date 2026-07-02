@@ -2,7 +2,7 @@
 
 BeamDrop（邻光）是一个面向局域网的轻量文件传输工具，聚焦在同一局域网内通过命令行完成可靠的文件投递。
 
-当前状态：C++ CLI 局域网文件传输 MVP 已完成。当前版本支持在局域网内通过命令行发送单文件、多文件和目录，并包含分块传输、SHA256 校验、配置加载、基础进度输出和文件日志。
+当前状态：C++ CLI 局域网文件传输 MVP 已完成。当前版本支持在局域网内通过命令行发送单文件、多文件和目录，并包含分块传输、断点续传、SHA256 校验、配置加载、基础进度输出和文件日志。
 
 ## 项目定位
 
@@ -15,7 +15,9 @@ BeamDrop 不以“复刻 AirDrop”为目标，而是提供一个清晰、可维
 - 项目内 Packet 协议
 - HELLO manifest 会话头
 - FILE_INFO JSON payload
+- RESUME_ACK offset 协商
 - 文件内容分块传输
+- 断点续传状态文件
 - SHA256 校验
 
 ## 技术栈
@@ -86,13 +88,13 @@ build-mingw\beamdrop.exe serve --config config\beamdrop.example.json --host 127.
 
 参数：
 
-| 参数         | 默认值              | 说明         |
-| ------------ | ------------------- | ------------ |
-| `--host`     | `0.0.0.0`           | 监听地址     |
-| `--port`     | `9090`              | 监听端口     |
-| `--save-dir` | `received`          | 文件保存目录 |
-| `--log-file` | `logs/beamdrop.log` | 日志文件路径 |
-| `--config`   | 无                  | 配置文件路径 |
+| 参数         | 默认值              | 说明                                   |
+| ------------ | ------------------- | -------------------------------------- |
+| `--host`     | `0.0.0.0`           | 监听地址                               |
+| `--port`     | `9090`              | 监听端口                               |
+| `--save-dir` | `received`          | 文件保存目录                           |
+| `--log-file` | `logs/beamdrop.log` | 日志文件路径                           |
+| `--config`   | 无                  | 配置文件路径，可读取续传配置和日志配置 |
 
 ### 生成和查看配置
 
@@ -132,7 +134,9 @@ build-mingw\beamdrop.exe send .\README.md .\docs --to 127.0.0.1:9090
 
 当前 `serve` / `send` 已支持通过 `--config` 读取配置文件。命令行显式参数会覆盖已加载配置；`send --chunk-size` 会覆盖 `transfer.chunk_size`。
 
-当前传输会话以 `HELLO` packet 开始，payload 使用 `beamdrop-manifest-v1` 文本 manifest，包含文件数量和总字节数；随后发送每个文件的 `FILE_INFO` / `DATA` / `FILE_END`，最后用 `FINISH` 结束。
+`serve` 会读取 `transfer.enable_resume` 和 `transfer.state_file`。开启续传后，接收端会根据状态文件和本地已存在文件计算可信 offset；发送端收到 `RESUME_ACK` 后从该 offset 继续发送。状态记录绑定 `relative_path + size + sha256`，传输完成且校验通过后会清理对应记录。
+
+当前传输会话以 `HELLO` packet 开始，payload 使用 `beamdrop-manifest-v1` 文本 manifest，包含文件数量和总字节数；随后每个文件统一使用 `FILE_INFO -> RESUME_ACK -> DATA -> FILE_END`，最后用 `FINISH` 结束。
 
 示例配置位于：
 

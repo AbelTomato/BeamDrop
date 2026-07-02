@@ -88,6 +88,8 @@ struct ServeOptions {
     std::string host = "0.0.0.0";
     std::uint16_t port = 9090;
     std::filesystem::path save_dir = "received";
+    bool enable_resume = false;
+    std::filesystem::path state_file = "transfer_state.json";
     std::filesystem::path log_file = "logs/beamdrop.log";
 };
 
@@ -101,6 +103,8 @@ ServeOptions parse_serve_options(int argc, char* argv[]) {
             options.host = config.server.host;
             options.port = config.server.port;
             options.save_dir = config.server.save_dir;
+            options.enable_resume = config.transfer.enable_resume;
+            options.state_file = config.transfer.state_file;
             options.log_file = config.log.file;
         } else if (arg == "--host" && index + 1 < argc) {
             options.host = argv[++index];
@@ -210,7 +214,10 @@ int run_serve(int argc, char* argv[]) {
         const auto file_count = manifest.file_count;
         logger.info("serve receiving file_count=" + std::to_string(file_count)
                     + " total_bytes=" + std::to_string(manifest.total_bytes));
-        beamdrop::transfer::Receiver receiver{connection, print_progress};
+        beamdrop::transfer::Receiver receiver{connection,
+                                              print_progress,
+                                              options.enable_resume,
+                                              options.state_file};
         receiver.receive_files(options.save_dir, static_cast<std::size_t>(file_count));
 
         const auto finish = beamdrop::protocol::read_packet(connection);

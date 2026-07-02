@@ -48,6 +48,8 @@ int main() {
     const auto formatted = beamdrop::config::format_config(generated);
     assert(formatted.find("\"server\"") != std::string::npos);
     assert(formatted.find("\"chunk_size\": 1048576") != std::string::npos);
+    assert(formatted.find("\"enable_resume\": false") != std::string::npos);
+    assert(formatted.find("\"state_file\": \"transfer_state.json\"") != std::string::npos);
 
     std::filesystem::remove_all(base_dir);
 

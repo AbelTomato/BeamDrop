@@ -4,6 +4,7 @@
 #include "beamdrop/protocol/PacketIO.hpp"
 #include "beamdrop/protocol/PacketType.hpp"
 #include "beamdrop/transfer/FileInfoCodec.hpp"
+#include "beamdrop/transfer/ResumeAckCodec.hpp"
 #include "beamdrop/utils/Sha256.hpp"
 
 #include <algorithm>
@@ -39,13 +40,27 @@ void Sender::send_file(const std::filesystem::path& source_path,
     info_packet.payload = FileInfoCodec::encode(FileInfo{relative_path, file_size, file_hash});
     protocol::write_packet(connection_, info_packet);
 
+    const auto ack_packet = protocol::read_packet(connection_);
+    if (ack_packet.header.type != protocol::PacketType::ResumeAck) {
+        throw std::runtime_error("expected RESUME_ACK packet");
+    }
+
+    const auto resume_ack = ResumeAckCodec::decode(ack_packet.payload);
+    if (resume_ack.offset > file_size) {
+        throw std::runtime_error("resume offset exceeds local file size");
+    }
+
     std::ifstream input(source_path, std::ios::binary);
     if (!input) {
         throw std::runtime_error("failed to open input file for streaming: " + source_path.string());
     }
+    input.seekg(static_cast<std::streamoff>(resume_ack.offset), std::ios::beg);
+    if (!input) {
+        throw std::runtime_error("failed to seek input file for resume: " + source_path.string());
+    }
 
     std::vector<std::uint8_t> buffer(chunk_size_);
-    std::uint64_t sent_size = 0;
+    std::uint64_t sent_size = resume_ack.offset;
     while (input) {
         input.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
         const auto read_count = input.gcount();

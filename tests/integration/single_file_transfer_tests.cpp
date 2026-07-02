@@ -3,7 +3,9 @@
 #include "beamdrop/network/TcpServer.hpp"
 #include "beamdrop/transfer/Progress.hpp"
 #include "beamdrop/transfer/Receiver.hpp"
+#include "beamdrop/transfer/ResumeManager.hpp"
 #include "beamdrop/transfer/Sender.hpp"
+#include "beamdrop/utils/Sha256.hpp"
 
 #include <cassert>
 #include <chrono>
@@ -19,6 +21,7 @@ using beamdrop::network::TcpServer;
 using beamdrop::transfer::ProgressDirection;
 using beamdrop::transfer::ProgressEvent;
 using beamdrop::transfer::Receiver;
+using beamdrop::transfer::ResumeManager;
 using beamdrop::transfer::Sender;
 
 int main() {
@@ -27,6 +30,7 @@ int main() {
     const auto base_dir = std::filesystem::temp_directory_path() / "beamdrop_single_file_test";
     const auto send_dir = base_dir / "send";
     const auto receive_dir = base_dir / "received";
+    const auto state_file = base_dir / "transfer_state.json";
     const auto source_path = send_dir / "hello.txt";
     const auto received_path = receive_dir / "nested" / "hello.txt";
 
@@ -36,6 +40,13 @@ int main() {
     const std::vector<std::uint8_t> expected = {'B', 'e', 'a', 'm', 'D', 'r', 'o', 'p', '\n',
                                                 'c', 'h', 'u', 'n', 'k', 'e', 'd', '\n'};
     beamdrop::filesystem::write_file(source_path, expected);
+
+    const std::vector<std::uint8_t> existing_prefix{expected.begin(), expected.begin() + 9};
+    beamdrop::filesystem::write_file(received_path, existing_prefix);
+    ResumeManager{state_file}.update_offset("nested/hello.txt",
+                                            expected.size(),
+                                            beamdrop::utils::sha256_file(source_path, 4),
+                                            existing_prefix.size());
 
     std::exception_ptr server_error;
     ProgressEvent last_receive_progress;
@@ -47,7 +58,7 @@ int main() {
             Receiver receiver{connection, [&](const ProgressEvent& event) {
                                   last_receive_progress = event;
                                   ++receive_progress_count;
-                              }};
+                              }, true, state_file};
             receiver.receive_one_file(receive_dir);
         } catch (...) {
             server_error = std::current_exception();
@@ -92,6 +103,7 @@ int main() {
     assert(last_receive_progress.file_index == 1);
     assert(last_receive_progress.file_count == 1);
     assert(last_receive_progress.file_complete);
+    assert(ResumeManager{state_file}.load().empty());
 
     std::filesystem::remove_all(base_dir);
 

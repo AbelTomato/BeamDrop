@@ -7,6 +7,7 @@
 #include "beamdrop/protocol/PacketType.hpp"
 #include "beamdrop/transfer/Progress.hpp"
 #include "beamdrop/transfer/Receiver.hpp"
+#include "beamdrop/transfer/ResumeManager.hpp"
 #include "beamdrop/transfer/Sender.hpp"
 #include "beamdrop/transfer/TransferManifest.hpp"
 
@@ -26,6 +27,7 @@ using beamdrop::protocol::PacketType;
 using beamdrop::transfer::ProgressDirection;
 using beamdrop::transfer::ProgressEvent;
 using beamdrop::transfer::Receiver;
+using beamdrop::transfer::ResumeManager;
 using beamdrop::transfer::Sender;
 using beamdrop::transfer::TransferManifest;
 using beamdrop::transfer::TransferManifestCodec;
@@ -36,6 +38,7 @@ int main() {
     const auto base_dir = std::filesystem::temp_directory_path() / "beamdrop_directory_transfer_test";
     const auto send_dir = base_dir / "send";
     const auto receive_dir = base_dir / "received";
+    const auto state_file = base_dir / "transfer_state.json";
 
     const auto source_a = send_dir / "a.txt";
     const auto source_b = send_dir / "nested" / "b.txt";
@@ -78,7 +81,7 @@ int main() {
                                   if (event.file_complete) {
                                       receive_completed.push_back(event);
                                   }
-                              }};
+                               }, true, state_file};
             receiver.receive_files(receive_dir, static_cast<std::size_t>(received_manifest.file_count));
         } catch (...) {
             server_error = std::current_exception();
@@ -130,6 +133,7 @@ int main() {
         assert(receive_completed[index].file_index == index + 1);
         assert(receive_completed[index].file_count == entries.size());
     }
+    assert(ResumeManager{state_file}.load().empty());
 
     std::filesystem::remove_all(base_dir);
 

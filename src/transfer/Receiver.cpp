@@ -4,11 +4,14 @@
 #include "beamdrop/protocol/PacketIO.hpp"
 #include "beamdrop/protocol/PacketType.hpp"
 #include "beamdrop/transfer/FileInfoCodec.hpp"
+#include "beamdrop/transfer/ResumeAckCodec.hpp"
+#include "beamdrop/transfer/ResumeManager.hpp"
 #include "beamdrop/utils/Sha256.hpp"
 
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace beamdrop::transfer {
 namespace {
@@ -29,10 +32,37 @@ std::filesystem::path safe_join(const std::filesystem::path& save_dir,
     return save_dir / path;
 }
 
+std::uint64_t existing_file_size(const std::filesystem::path& path) {
+    if (!std::filesystem::exists(path)) {
+        return 0;
+    }
+    if (!std::filesystem::is_regular_file(path)) {
+        return 0;
+    }
+    return static_cast<std::uint64_t>(std::filesystem::file_size(path));
+}
+
+std::uint64_t trusted_resume_offset(const ResumeManager& resume_manager,
+                                    const FileInfo& file_info,
+                                    const std::filesystem::path& output_path) {
+    const auto stored_offset = resume_manager.find_offset(file_info.relative_path,
+                                                          file_info.size,
+                                                          file_info.sha256)
+                                   .value_or(0);
+    const auto on_disk_size = existing_file_size(output_path);
+    return std::min({stored_offset, on_disk_size, file_info.size});
+}
+
 } // namespace
 
-Receiver::Receiver(const network::TcpConnection& connection, ProgressCallback progress_callback)
-    : connection_(connection), progress_callback_(std::move(progress_callback)) {}
+Receiver::Receiver(const network::TcpConnection& connection,
+                   ProgressCallback progress_callback,
+                   bool enable_resume,
+                   std::filesystem::path state_file)
+    : connection_(connection),
+      progress_callback_(std::move(progress_callback)),
+      enable_resume_(enable_resume),
+      state_file_(std::move(state_file)) {}
 
 void Receiver::receive_one_file(const std::filesystem::path& save_dir) const {
     receive_one_file(save_dir, 1, 1);
@@ -53,13 +83,28 @@ void Receiver::receive_one_file(const std::filesystem::path& save_dir,
         std::filesystem::create_directories(parent);
     }
 
-    std::ofstream output(output_path, std::ios::binary | std::ios::trunc);
+    const ResumeManager resume_manager{state_file_};
+    const auto resume_offset = enable_resume_
+                                   ? trusted_resume_offset(resume_manager, file_info, output_path)
+                                   : 0;
+
+    protocol::Packet ack_packet;
+    ack_packet.header.type = protocol::PacketType::ResumeAck;
+    ack_packet.payload = ResumeAckCodec::encode(ResumeAck{resume_offset});
+    protocol::write_packet(connection_, ack_packet);
+
+    if (resume_offset > 0) {
+        std::filesystem::resize_file(output_path, resume_offset);
+    }
+
+    const auto open_mode = resume_offset > 0 ? (std::ios::binary | std::ios::app)
+                                             : (std::ios::binary | std::ios::trunc);
+    std::ofstream output(output_path, open_mode);
     if (!output) {
         throw std::runtime_error("failed to open output file: " + output_path.string());
     }
 
-    utils::Sha256 sha256;
-    std::uint64_t received_size = 0;
+    std::uint64_t received_size = resume_offset;
 
     while (true) {
         const auto packet = protocol::read_packet(connection_);
@@ -75,13 +120,19 @@ void Receiver::receive_one_file(const std::filesystem::path& save_dir,
             throw std::runtime_error("received data size exceeds FILE_INFO size");
         }
 
-        sha256.update(packet.payload);
         if (!packet.payload.empty()) {
             output.write(reinterpret_cast<const char*>(packet.payload.data()),
                          static_cast<std::streamsize>(packet.payload.size()));
             if (!output) {
                 throw std::runtime_error("failed to write output file: " + output_path.string());
             }
+        }
+
+        if (enable_resume_) {
+            resume_manager.update_offset(file_info.relative_path,
+                                         file_info.size,
+                                         file_info.sha256,
+                                         received_size);
         }
 
         if (progress_callback_) {
@@ -103,8 +154,12 @@ void Receiver::receive_one_file(const std::filesystem::path& save_dir,
     if (received_size != file_info.size) {
         throw std::runtime_error("received data size mismatch");
     }
-    if (sha256.final_hex() != file_info.sha256) {
+    if (utils::sha256_file(output_path, 1024 * 1024) != file_info.sha256) {
         throw std::runtime_error("received data sha256 mismatch");
+    }
+
+    if (enable_resume_) {
+        resume_manager.clear(file_info.relative_path, file_info.size, file_info.sha256);
     }
 }
 

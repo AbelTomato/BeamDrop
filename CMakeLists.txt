@@ -25,6 +25,8 @@ add_executable(beamdrop
     src/protocol/Serializer.cpp
     src/transfer/FileInfoCodec.cpp
     src/transfer/Receiver.cpp
+    src/transfer/ResumeAckCodec.cpp
+    src/transfer/ResumeManager.cpp
     src/transfer/Sender.cpp
     src/transfer/TransferManifest.cpp
     src/utils/Sha256.cpp
@@ -175,6 +177,42 @@ endif()
 
 add_test(NAME file_info_codec_tests COMMAND file_info_codec_tests)
 
+add_executable(resume_ack_codec_tests
+    tests/unit/resume_ack_codec_tests.cpp
+    src/transfer/ResumeAckCodec.cpp
+)
+
+target_include_directories(resume_ack_codec_tests
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
+
+if (MSVC)
+    target_compile_options(resume_ack_codec_tests PRIVATE /W4)
+else()
+    target_compile_options(resume_ack_codec_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_test(NAME resume_ack_codec_tests COMMAND resume_ack_codec_tests)
+
+add_executable(resume_manager_tests
+    tests/unit/resume_manager_tests.cpp
+    src/transfer/ResumeManager.cpp
+)
+
+target_include_directories(resume_manager_tests
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
+
+if (MSVC)
+    target_compile_options(resume_manager_tests PRIVATE /W4)
+else()
+    target_compile_options(resume_manager_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_test(NAME resume_manager_tests COMMAND resume_manager_tests)
+
 add_executable(tcp_hello_tests
     tests/integration/tcp_hello_tests.cpp
     src/network/TcpClient.cpp
@@ -214,6 +252,8 @@ add_executable(single_file_transfer_tests
     src/protocol/Serializer.cpp
     src/transfer/FileInfoCodec.cpp
     src/transfer/Receiver.cpp
+    src/transfer/ResumeAckCodec.cpp
+    src/transfer/ResumeManager.cpp
     src/transfer/Sender.cpp
     src/transfer/TransferManifest.cpp
     src/utils/Sha256.cpp
@@ -248,6 +288,8 @@ add_executable(directory_transfer_tests
     src/protocol/Serializer.cpp
     src/transfer/FileInfoCodec.cpp
     src/transfer/Receiver.cpp
+    src/transfer/ResumeAckCodec.cpp
+    src/transfer/ResumeManager.cpp
     src/transfer/Sender.cpp
     src/transfer/TransferManifest.cpp
     src/utils/Sha256.cpp
@@ -269,3 +311,39 @@ if (WIN32)
 endif()
 
 add_test(NAME directory_transfer_tests COMMAND directory_transfer_tests)
+
+add_executable(resume_transfer_tests
+    tests/integration/resume_transfer_tests.cpp
+    src/filesystem/FileScanner.cpp
+    src/filesystem/FileUtils.cpp
+    src/network/TcpClient.cpp
+    src/network/TcpConnection.cpp
+    src/network/TcpServer.cpp
+    src/protocol/PacketIO.cpp
+    src/protocol/PacketParser.cpp
+    src/protocol/Serializer.cpp
+    src/transfer/FileInfoCodec.cpp
+    src/transfer/Receiver.cpp
+    src/transfer/ResumeAckCodec.cpp
+    src/transfer/ResumeManager.cpp
+    src/transfer/Sender.cpp
+    src/transfer/TransferManifest.cpp
+    src/utils/Sha256.cpp
+)
+
+target_include_directories(resume_transfer_tests
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
+
+if (MSVC)
+    target_compile_options(resume_transfer_tests PRIVATE /W4)
+else()
+    target_compile_options(resume_transfer_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+if (WIN32)
+    target_link_libraries(resume_transfer_tests PRIVATE ws2_32)
+endif()
+
+add_test(NAME resume_transfer_tests COMMAND resume_transfer_tests)
