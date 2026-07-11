@@ -103,7 +103,39 @@ beamdrop_core + app service
 6. REST 快照是权威状态；WebSocket 只负责低延迟增量事件。
 7. 传输协议、续传格式和 SHA256 校验逻辑只属于 C++ core。
 
-### 2.3 建议目录规划
+### 2.3 CMake 与多平台构建策略
+
+当前 CMake target 边界按宿主分层，而不是按平台复制业务逻辑：
+
+```text
+beamdrop_core (STATIC, PIC, C++ app service / transfer / protocol)
+  ├─ beamdrop CLI
+  ├─ beamdrop_unit_tests / beamdrop_integration_tests
+  ├─ beamdrop_native (pybind11，本期后续切片)
+  └─ beamdrop_c_api (稳定 C ABI，Tauri / Rust 路线后续切片)
+```
+
+约束：
+
+- `beamdrop_core` 继续保持不感知 HTTP、WebSocket、Python、Rust、Tauri 和前端任务 ID。
+- `beamdrop_core` 使用静态库并开启 `POSITION_INDEPENDENT_CODE`，保证 Linux 下可被 pybind11 `MODULE` 复用。
+- Windows socket 依赖只通过 CMake 平台分支链接 `ws2_32`，不要把平台库链接散落到各宿主 target。
+- Python binding 与未来 Tauri C ABI 是并列宿主适配层；Tauri 不依赖 pybind，FastAPI 不成为桌面客户端的必需常驻后端。
+- C ABI 共享库必须单独定义导出符号、句柄生命周期、错误码和内存释放规则，不直接把 C++ 类 ABI 暴露给 Rust。
+- macOS 后续通过 preset/toolchain、签名、公证和本地网络权限处理；不要在 core 业务代码中提前写 macOS 特例。
+- Android / iOS 后续需要新的文件源抽象，不能把桌面 `std::filesystem::path` 直接视为移动端 API。
+
+构建选项：
+
+| 选项                    | 默认值 | 用途                         |
+| ----------------------- | ------ | ---------------------------- |
+| `BEAMDROP_BUILD_CLI`    | `ON`   | 构建 CLI                     |
+| `BEAMDROP_BUILD_TESTS`  | `ON`   | 构建 CTest 测试 suite        |
+| `BEAMDROP_BUILD_PYTHON` | `OFF`  | 构建 pybind11 native binding |
+
+增量构建策略：测试目标已合并为 unit / integration 两个 suite，避免 `beamdrop_core` 更新后每个测试可执行文件重复链接。头文件变更导致依赖 `.cpp` 重编译是正确行为；后续优化重点是降低头文件传播范围、使用前置声明或 PImpl、引入编译缓存，而不是隐藏依赖关系。
+
+### 2.4 建议目录规划
 
 ```text
 bindings/

@@ -65,31 +65,61 @@ cmake/
 
 ## 构建
 
+推荐使用 `CMakePresets.json` 固化平台构建目录和选项。
+
 ### Windows / MinGW
 
 ```bash
-cmake -S . -B build-mingw -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug
-cmake --build build-mingw
+cmake --preset windows-mingw-debug
+cmake --build --preset windows-mingw-debug
 ```
 
 运行测试：
 
 ```bash
+ctest --preset windows-mingw-debug
+```
+
+旧命令仍可使用：
+
+```bash
+cmake -S . -B build-mingw -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-mingw
 ctest --test-dir build-mingw --output-on-failure
 ```
 
 ### Linux / GCC
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
+cmake --preset linux-gcc-debug
+cmake --build --preset linux-gcc-debug
 ```
 
 运行测试：
 
 ```bash
+ctest --preset linux-gcc-debug
+```
+
+旧命令仍可使用：
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build
 ctest --test-dir build --output-on-failure
 ```
+
+### 构建选项
+
+| 选项                    | 默认值 | 说明                         |
+| ----------------------- | ------ | ---------------------------- |
+| `BEAMDROP_BUILD_CLI`    | `ON`   | 构建 `beamdrop` CLI          |
+| `BEAMDROP_BUILD_TESTS`  | `ON`   | 构建 CTest 测试 suite        |
+| `BEAMDROP_BUILD_PYTHON` | `OFF`  | 构建后续 pybind11 native 模块 |
+
+当前 CTest 由两个测试可执行文件组成：`beamdrop_unit_tests` 和 `beamdrop_integration_tests`。各测试源文件仍保持原有独立 `main()` 形式，但在 CMake 中编译为 object 并由 suite runner 调用。这样在 `beamdrop_core` 变化时只需要重链接 CLI、unit suite 和 integration suite，避免每个测试目标重复链接。
+
+新增或修改被广泛包含的头文件仍会触发相关 `.cpp` 重编译，这是 C++ 依赖模型的正常行为。若后续头文件改动频繁，可继续通过减少头文件包含、前置声明、PImpl、预编译头或 `ccache` / `sccache` 降低重编译成本；不要通过隐藏头文件依赖来规避正确的增量构建。
 
 ## 使用与配置
 
