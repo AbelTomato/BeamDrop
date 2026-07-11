@@ -65,7 +65,7 @@ cmake/
 
 ## 构建
 
-Windows / MinGW：
+### Windows / MinGW
 
 ```bash
 cmake -S . -B build-mingw -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug
@@ -78,12 +78,38 @@ cmake --build build-mingw
 ctest --test-dir build-mingw --output-on-failure
 ```
 
+### Linux / GCC
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build
+```
+
+运行测试：
+
+```bash
+ctest --test-dir build --output-on-failure
+```
+
 ## 使用与配置
+
+以下示例按平台区分：
+
+- Windows 使用 `build-mingw\beamdrop.exe` 和反斜杠路径。
+- Linux 使用 `./build/beamdrop` 和正斜杠路径。
 
 ### 启动接收端
 
+Windows：
+
 ```bash
 build-mingw\beamdrop.exe serve --config config\beamdrop.example.json --host 127.0.0.1 --port 9090 --save-dir received --log-file logs\beamdrop.log
+```
+
+Linux：
+
+```bash
+./build/beamdrop serve --config config/beamdrop.example.json --host 127.0.0.1 --port 9090 --save-dir received --log-file logs/beamdrop.log
 ```
 
 `serve` 启动后会持续监听，可连续接收多次 `send`。当前退出方式为 Ctrl+C 或终止进程。
@@ -102,34 +128,74 @@ build-mingw\beamdrop.exe serve --config config\beamdrop.example.json --host 127.
 
 生成默认配置：
 
+Windows：
+
 ```bash
 build-mingw\beamdrop.exe config init --path config\beamdrop.json
 ```
 
+Linux：
+
+```bash
+./build/beamdrop config init --path config/beamdrop.json
+```
+
 查看配置：
+
+Windows：
 
 ```bash
 build-mingw\beamdrop.exe config show --path config\beamdrop.json
+```
+
+Linux：
+
+```bash
+./build/beamdrop config show --path config/beamdrop.json
 ```
 
 `config init` 会创建父目录并写入默认配置；`config show` 会读取指定配置文件并输出规范化后的 JSON。
 
 ### 发送单文件
 
+Windows：
+
 ```bash
 build-mingw\beamdrop.exe send .\README.md --to 127.0.0.1:9090 --config config\beamdrop.example.json --chunk-size 65536 --log-file logs\beamdrop.log
 ```
 
+Linux：
+
+```bash
+./build/beamdrop send ./README.md --to 127.0.0.1:9090 --config config/beamdrop.example.json --chunk-size 65536 --log-file logs/beamdrop.log
+```
+
 ### 发送目录
+
+Windows：
 
 ```bash
 build-mingw\beamdrop.exe send .\docs --to 127.0.0.1:9090
 ```
 
+Linux：
+
+```bash
+./build/beamdrop send ./docs --to 127.0.0.1:9090
+```
+
 ### 一次发送多个路径
+
+Windows：
 
 ```bash
 build-mingw\beamdrop.exe send .\README.md .\docs --to 127.0.0.1:9090
+```
+
+Linux：
+
+```bash
+./build/beamdrop send ./README.md ./docs --to 127.0.0.1:9090
 ```
 
 ### 配置文件示例
