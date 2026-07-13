@@ -2,11 +2,12 @@
 
 #include "beamdrop/transfer/Progress.hpp"
 
-#include <stdexcept>
-#include <string>
-#include <functional>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <string>
+#include <utility>
+#include <variant>
 
 namespace beamdrop::app {
 struct TransferProgress {
@@ -18,36 +19,84 @@ struct TransferProgress {
     std::uint64_t current_file_total_bytes = 0;
     std::size_t file_index = 0;
     std::size_t file_count = 0;
-    bool file_complete = false;
+    beamdrop::transfer::Stage stage = beamdrop::transfer::Stage::TaskStarted;
 };
 
 using ProgressCallback = std::function<void(const TransferProgress &)>;
 
-struct ServiceError {
-    enum class Code { InvalidRequest, NetworkFailure, ProtocolError, FileSystemError, Cancelled };
+enum class ErrorCode {
+    InvalidRequest,
+    NetworkFailure,
+    ProtocolError,
+    FileSystemError,
+    Cancelled,
+    AlreadyRunning,
+    NotRunning,
+    BindFailed,
+    InternalError
 };
 
-class ServiceException : public std::runtime_error {
-  public:
-    ServiceException(ServiceError::Code code, const std::string &message)
-        : std::runtime_error(message), code_(code) {}
+struct ServiceError {
+    ErrorCode code;
+    std::string message;
+};
 
-    [[nodiscard]] ServiceError::Code code() const noexcept {
-        return code_;
+template <typename T> class ServiceResult {
+  public:
+    static ServiceResult success(T value) {
+        return ServiceResult{std::in_place_index<0>, std::move(value)};
+    }
+
+    static ServiceResult failure(ServiceError error) {
+        return ServiceResult{std::in_place_index<1>, std::move(error)};
+    }
+
+    [[nodiscard]] bool has_value() const noexcept {
+        return storage_.index() == 0;
+    }
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return has_value();
+    }
+
+    [[nodiscard]] T &value() & {
+        return std::get<T>(storage_);
+    }
+
+    [[nodiscard]] const T &value() const & {
+        return std::get<T>(storage_);
+    }
+
+    [[nodiscard]] T &&value() && {
+        return std::get<T>(std::move(storage_));
+    }
+
+    [[nodiscard]] ServiceError &error() & {
+        return std::get<ServiceError>(storage_);
+    }
+
+    [[nodiscard]] const ServiceError &error() const & {
+        return std::get<ServiceError>(storage_);
     }
 
   private:
-    ServiceError::Code code_;
+    template <std::size_t Index, typename U>
+    explicit ServiceResult(std::in_place_index_t<Index>, U &&value)
+        : storage_(std::in_place_index<Index>, std::forward<U>(value)) {}
+
+    std::variant<T, ServiceError> storage_;
 };
 
 [[nodiscard]] inline TransferProgress
 to_app_progress(const beamdrop::transfer::ProgressEvent &event) {
-    return TransferProgress {
-        event.direction == transfer::ProgressDirection::Send ? TransferProgress::Direction::Send
-                                                             : TransferProgress::Direction::Receive,
-            event.relative_path, event.current_file_bytes, event.current_file_total_bytes,
-            event.file_index, event.file_count,
-            event.file_complete,
-    };
+    return TransferProgress{event.direction == transfer::ProgressDirection::Send
+                                ? TransferProgress::Direction::Send
+                                : TransferProgress::Direction::Receive,
+                            event.relative_path,
+                            event.current_file_bytes,
+                            event.current_file_total_bytes,
+                            event.file_index,
+                            event.file_count,
+                            event.stage};
 }
-}       // namespace beamdrop::app
+} // namespace beamdrop::app

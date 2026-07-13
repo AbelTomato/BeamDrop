@@ -9,7 +9,6 @@
 namespace beamdrop::app {
 struct ReceiveRequest {
     ProgressCallback progress_callback = {};
-    std::stop_token stop_token = {};
     bool enable_resume = false;
     std::filesystem::path state_file = {};
     std::filesystem::path save_dir = {};
@@ -21,6 +20,8 @@ struct ReceiveResult {
 
 class ReceiveService {
   public:
-    [[nodiscard]] ReceiveResult receive(const beamdrop::network::TcpConnection& connection, const ReceiveRequest& request) const;
+    [[nodiscard]] ServiceResult<ReceiveResult>
+    receive(const beamdrop::network::TcpConnection &connection, const ReceiveRequest &request,
+            const std::stop_token stop_token) const;
 };
-}
+} // namespace beamdrop::app

@@ -14,6 +14,7 @@
 #include <exception>
 #include <filesystem>
 #include <iostream>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -28,8 +29,7 @@ using beamdrop::transfer::TransferManifestCodec;
 
 namespace {
 
-void send_one_file(const std::filesystem::path& source_path,
-                   const std::string& relative_path,
+void send_one_file(const std::filesystem::path &source_path, const std::string &relative_path,
                    std::uint16_t port) {
     TcpClient client;
     auto connection = client.connect("127.0.0.1", port);
@@ -48,16 +48,16 @@ void send_one_file(const std::filesystem::path& source_path,
     beamdrop::protocol::write_packet(connection, finish);
 }
 
-void receive_one_session(const beamdrop::network::TcpConnection& connection,
-                         const std::filesystem::path& receive_dir,
-                         const std::filesystem::path& state_file) {
+void receive_one_session(const beamdrop::network::TcpConnection &connection,
+                         const std::filesystem::path &receive_dir,
+                         const std::filesystem::path &state_file) {
     const auto hello = beamdrop::protocol::read_packet(connection);
     assert(hello.header.type == PacketType::Hello);
     const auto manifest = TransferManifestCodec::decode(hello.payload);
     assert(manifest.file_count == 1);
 
     Receiver receiver{connection, {}, true, state_file};
-    receiver.receive_files(receive_dir, static_cast<std::size_t>(manifest.file_count));
+    receiver.receive_task(receive_dir, static_cast<std::size_t>(manifest.file_count));
 
     const auto finish = beamdrop::protocol::read_packet(connection);
     assert(finish.header.type == PacketType::Finish);
@@ -66,6 +66,8 @@ void receive_one_session(const beamdrop::network::TcpConnection& connection,
 } // namespace
 
 int main() {
+    using namespace std::chrono_literals;
+
     constexpr std::uint16_t port = 19094;
 
     const auto base_dir = std::filesystem::temp_directory_path() / "beamdrop_persistent_serve_test";

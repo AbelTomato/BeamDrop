@@ -1,9 +1,11 @@
+#include "beamdrop/app/ReceiveServerService.hpp"
 #include "beamdrop/app/ReceiveService.hpp"
 #include "beamdrop/app/SendService.hpp"
 #include "beamdrop/app/TransferTask.hpp"
 #include "beamdrop/config/AppConfig.hpp"
 #include "beamdrop/logger/Logger.hpp"
 #include "beamdrop/network/TcpServer.hpp"
+#include "beamdrop/transfer/Progress.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -11,6 +13,7 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -59,7 +62,7 @@ void print_app_progress(const beamdrop::app::TransferProgress &progress) {
     std::cout << "beamdrop " << verb << " [" << progress.file_index << '/' << progress.file_count
               << "] " << progress.relative_path << ' ' << progress.current_file_bytes << '/'
               << progress.current_file_total_bytes << " bytes";
-    if (progress.file_complete) {
+    if (progress.stage == beamdrop::transfer::Stage::TaskCompleted) {
         std::cout << " done";
     }
     std::cout << '\n';
@@ -184,7 +187,8 @@ ConfigOptions parse_config_options(int argc, char *argv[]) {
 }
 
 std::size_t receive_transfer_session(const beamdrop::network::TcpConnection &connection,
-                                     const ServeOptions &options) {
+                                     const ServeOptions &options,
+                                     const std::stop_token stop_token) {
     auto request = beamdrop::app::ReceiveRequest{};
     request.enable_resume = options.enable_resume;
     request.progress_callback = print_app_progress;
@@ -192,9 +196,13 @@ std::size_t receive_transfer_session(const beamdrop::network::TcpConnection &con
     request.state_file = options.state_file;
 
     auto service = beamdrop::app::ReceiveService{};
-    auto result = service.receive(connection, request);
+    auto result = service.receive(connection, request, stop_token);
 
-    return result.file_count;
+    if (result) {
+        return result.value().file_count;
+    } else {
+        throw std::runtime_error(result.error().message);
+    }
 }
 
 int run_serve(int argc, char *argv[]) {
@@ -204,23 +212,24 @@ int run_serve(int argc, char *argv[]) {
                 " save_dir=" + options.save_dir.string());
 
     try {
-        beamdrop::network::TcpServer server{options.host, options.port};
+        auto request = beamdrop::app::ReceiveServerRequest{};
+        request.host = options.host;
+        request.port = options.port;
+        request.receive_request.progress_callback = print_app_progress;
+        request.receive_request.enable_resume = options.enable_resume;
+        request.receive_request.state_file = options.state_file;
+        request.receive_request.save_dir = options.save_dir;
+        auto server = beamdrop::app::ReceiveServerService{};
+        auto result = server.start(request);
+
+        if (!result) {
+            throw std::runtime_error(result.error().message);
+        }
 
         std::cout << "beamdrop serve listening on " << options.host << ':' << options.port
                   << ", save-dir=" << options.save_dir.string() << '\n';
 
-        while (true) {
-            try {
-                auto connection = server.accept_one();
-                logger.info("serve accepted connection");
-                const auto file_count = receive_transfer_session(connection, options);
-                std::cout << "beamdrop serve received " << file_count << " file(s)\n";
-                logger.info("serve completed file_count=" + std::to_string(file_count));
-            } catch (const std::exception &error) {
-                logger.error(std::string{"serve connection failed: "} + error.what());
-                std::cerr << "beamdrop serve connection error: " << error.what() << '\n';
-            }
-        }
+        return 0;
     } catch (const std::exception &error) {
         logger.error(std::string{"serve failed: "} + error.what());
         throw;
@@ -244,10 +253,15 @@ int run_send(int argc, char *argv[]) {
         auto service = beamdrop::app::SendService{};
         auto result = service.send(request);
 
-        std::cout << "beamdrop send sent " << result.file_count << " file(s) to "
-                  << options.endpoint.host << ':' << options.endpoint.port << '\n';
-        logger.info("send completed file_count=" + std::to_string(result.file_count));
-        return 0;
+        if (result) {
+            std::cout << "beamdrop send sent " << result.value().file_count << " file(s) to "
+                      << options.endpoint.host << ':' << options.endpoint.port << '\n';
+            logger.info("send completed file_count=" + std::to_string(result.value().file_count));
+            return 0;
+        } else {
+            throw std::runtime_error(result.error().message);
+        }
+
     } catch (const std::exception &error) {
         logger.error(std::string{"send failed: "} + error.what());
         throw;

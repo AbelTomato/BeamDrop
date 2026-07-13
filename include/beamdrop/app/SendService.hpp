@@ -23,6 +23,6 @@ struct SendResult {
 
 class SendService {
   public:
-    [[nodiscard]] SendResult send(const SendRequest& request) const;
+    [[nodiscard]] ServiceResult<SendResult> send(const SendRequest &request) const;
 };
-}   // namespace beamdrop::app
+} // namespace beamdrop::app

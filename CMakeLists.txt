@@ -44,7 +44,8 @@ set(BEAMDROP_CORE_SOURCES
     src/transfer/TransferManifest.cpp
     src/utils/Sha256.cpp
     src/app/SendService.cpp
-    src/app/ReceiveService.cpp)
+    src/app/ReceiveService.cpp
+    src/app/ReceiveServerService.cpp)
 
 add_library(beamdrop_core STATIC
     ${BEAMDROP_CORE_SOURCES}
@@ -122,6 +123,8 @@ if (BEAMDROP_BUILD_TESTS)
     add_beamdrop_test_object(resume_transfer_tests_obj tests/integration/resume_transfer_tests.cpp beamdrop_resume_transfer_tests_main)
     add_beamdrop_test_object(persistent_serve_tests_obj tests/integration/persistent_serve_tests.cpp beamdrop_persistent_serve_tests_main)
     add_beamdrop_test_object(app_service_single_file_transfer_tests_obj tests/integration/app_service_single_file_transfer_tests.cpp beamdrop_app_service_single_file_transfer_tests_main)
+    add_beamdrop_test_object(app_receive_server_service_tests_obj tests/integration/app_receive_server_service_tests.cpp beamdrop_app_receive_server_service_tests_main)
+    add_beamdrop_test_object(tcp_server_timeout_tests_obj tests/integration/tcp_server_timeout_tests.cpp beamdrop_tcp_server_timeout_tests_main)
 
     add_executable(beamdrop_integration_tests
         tests/integration_test_runner.cpp
@@ -131,6 +134,8 @@ if (BEAMDROP_BUILD_TESTS)
         $<TARGET_OBJECTS:resume_transfer_tests_obj>
         $<TARGET_OBJECTS:persistent_serve_tests_obj>
         $<TARGET_OBJECTS:app_service_single_file_transfer_tests_obj>
+        $<TARGET_OBJECTS:app_receive_server_service_tests_obj>
+        $<TARGET_OBJECTS:tcp_server_timeout_tests_obj>
     )
     target_link_libraries(beamdrop_integration_tests PRIVATE beamdrop_core beamdrop_project_warnings)
     add_test(NAME beamdrop_integration_tests COMMAND beamdrop_integration_tests)

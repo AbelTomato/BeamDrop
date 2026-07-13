@@ -33,9 +33,12 @@ using beamdrop::transfer::TransferManifest;
 using beamdrop::transfer::TransferManifestCodec;
 
 int main() {
+    using namespace std::chrono_literals;
+
     constexpr std::uint16_t port = 19092;
 
-    const auto base_dir = std::filesystem::temp_directory_path() / "beamdrop_directory_transfer_test";
+    const auto base_dir =
+        std::filesystem::temp_directory_path() / "beamdrop_directory_transfer_test";
     const auto send_dir = base_dir / "send";
     const auto receive_dir = base_dir / "received";
     const auto state_file = base_dir / "transfer_state.json";
@@ -60,29 +63,37 @@ int main() {
     const auto entries = beamdrop::filesystem::scan_files(send_dir);
     assert(entries.size() == 3);
     std::uint64_t total_bytes = 0;
-    for (const auto& entry : entries) {
+    for (const auto &entry : entries) {
         total_bytes += entry.size;
     }
 
     std::exception_ptr server_error;
     TransferManifest received_manifest;
-    std::vector<ProgressEvent> receive_completed;
+    std::vector<ProgressEvent> receive_file_completed;
+    std::vector<ProgressEvent> receive_task_completed;
     std::thread server_thread([&] {
         try {
             TcpServer server{"127.0.0.1", port};
             auto connection = server.accept_one();
+
             const auto hello = beamdrop::protocol::read_packet(connection);
             assert(hello.header.type == PacketType::Hello);
             received_manifest = TransferManifestCodec::decode(hello.payload);
             assert(received_manifest.file_count == entries.size());
             assert(received_manifest.total_bytes == total_bytes);
 
-            Receiver receiver{connection, [&](const ProgressEvent& event) {
-                                  if (event.file_complete) {
-                                      receive_completed.push_back(event);
+            Receiver receiver{connection,
+                              [&](const ProgressEvent &event) {
+                                  if (event.stage == beamdrop::transfer::Stage::FileCompleted) {
+                                      receive_file_completed.push_back(event);
                                   }
-                               }, true, state_file};
-            receiver.receive_files(receive_dir, static_cast<std::size_t>(received_manifest.file_count));
+                                  if (event.stage == beamdrop::transfer::Stage::TaskCompleted) {
+                                      receive_task_completed.push_back(event);
+                                  }
+                              },
+                              true, state_file};
+            receiver.receive_task(receive_dir,
+                                  static_cast<std::size_t>(received_manifest.file_count));
         } catch (...) {
             server_error = std::current_exception();
         }
@@ -98,13 +109,19 @@ int main() {
         TransferManifest{static_cast<std::uint64_t>(entries.size()), total_bytes});
     beamdrop::protocol::write_packet(connection, hello);
 
-    std::vector<ProgressEvent> send_completed;
-    Sender sender{connection, [&](const ProgressEvent& event) {
-                      if (event.file_complete) {
-                          send_completed.push_back(event);
+    std::vector<ProgressEvent> send_file_completed;
+    std::vector<ProgressEvent> send_task_completed;
+    Sender sender{connection,
+                  [&](const ProgressEvent &event) {
+                      if (event.stage == beamdrop::transfer::Stage::FileCompleted) {
+                          send_file_completed.push_back(event);
                       }
-                   }, 4};
-    sender.send_files(entries);
+                      if (event.stage == beamdrop::transfer::Stage::TaskCompleted) {
+                          send_task_completed.push_back(event);
+                      }
+                  },
+                  4};
+    sender.send_task(entries);
 
     server_thread.join();
 
@@ -116,22 +133,28 @@ int main() {
     assert(beamdrop::filesystem::read_file(received_b) == content_b);
     assert(beamdrop::filesystem::read_file(received_c) == content_c);
 
-    assert(send_completed.size() == entries.size());
-    assert(receive_completed.size() == entries.size());
+    assert(send_file_completed.size() == entries.size());
+    assert(receive_file_completed.size() == entries.size());
+    assert(send_task_completed.size() == 1);
+    assert(receive_task_completed.size() == 1);
+    assert(send_task_completed.front().file_index == entries.size());
+    assert(send_task_completed.front().file_count == entries.size());
+    assert(receive_task_completed.front().file_index == entries.size());
+    assert(receive_task_completed.front().file_count == entries.size());
     for (std::size_t index = 0; index < entries.size(); ++index) {
-        assert(send_completed[index].direction == ProgressDirection::Send);
-        assert(send_completed[index].relative_path == entries[index].relative_path);
-        assert(send_completed[index].current_file_bytes == entries[index].size);
-        assert(send_completed[index].current_file_total_bytes == entries[index].size);
-        assert(send_completed[index].file_index == index + 1);
-        assert(send_completed[index].file_count == entries.size());
+        assert(send_file_completed[index].direction == ProgressDirection::Send);
+        assert(send_file_completed[index].relative_path == entries[index].relative_path);
+        assert(send_file_completed[index].current_file_bytes == entries[index].size);
+        assert(send_file_completed[index].current_file_total_bytes == entries[index].size);
+        assert(send_file_completed[index].file_index == index + 1);
+        assert(send_file_completed[index].file_count == entries.size());
 
-        assert(receive_completed[index].direction == ProgressDirection::Receive);
-        assert(receive_completed[index].relative_path == entries[index].relative_path);
-        assert(receive_completed[index].current_file_bytes == entries[index].size);
-        assert(receive_completed[index].current_file_total_bytes == entries[index].size);
-        assert(receive_completed[index].file_index == index + 1);
-        assert(receive_completed[index].file_count == entries.size());
+        assert(receive_file_completed[index].direction == ProgressDirection::Receive);
+        assert(receive_file_completed[index].relative_path == entries[index].relative_path);
+        assert(receive_file_completed[index].current_file_bytes == entries[index].size);
+        assert(receive_file_completed[index].current_file_total_bytes == entries[index].size);
+        assert(receive_file_completed[index].file_index == index + 1);
+        assert(receive_file_completed[index].file_count == entries.size());
     }
     assert(ResumeManager{state_file}.load().empty());
 
