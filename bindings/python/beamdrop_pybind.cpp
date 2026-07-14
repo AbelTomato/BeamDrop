@@ -94,7 +94,8 @@ PYBIND11_MODULE(beamdrop_native, m) {
                         callback(progress);
                     } catch (py::error_already_set &error) {
                         const std::string message = error.what();
-                        error.discard_as_unraisable(callback);
+                        error.restore();
+                        PyErr_Clear();
                         throw PythonProgressCallbackError(message);
                     }
                 };
