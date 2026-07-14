@@ -650,3 +650,27 @@ pybind 回调不得直接操作 asyncio 对象；通过线程安全队列或 `lo
 7. Android / iOS 生命周期：沙盒、局域网权限、后台限制和中断恢复。
 
 FastAPI 不会被废弃，而是保留为 Web / Agent 控制宿主；Tauri 是正式桌面宿主。两者共享领域契约和 React 功能层，但不强行共享底层运行时。
+
+## 实施状态（2026-07-14）
+
+### Slice 2：pybind11 薄绑定 — Windows 验证完成，Linux 验证待执行
+
+已完成：
+
+- 构建 `beamdrop_native` pybind11 扩展模块。
+- 暴露 `ErrorCode`、传输方向/阶段、`ServiceError`、`SendResult`、`TransferProgress` 等只读领域 DTO。
+- `ServiceResult<T>` 失败统一转换为带稳定 `ErrorCode` 的 `BeamDropError`，上层无需解析错误文本。
+- 暴露 `send(..., on_progress=None)`；发送长任务释放 GIL，进度回调前重新获取 GIL。
+- Python 回调异常转换为 `BeamDropError(ErrorCode.INTERNAL_ERROR)`，不会导致进程崩溃。
+- 暴露持久 `ReceiverService` 的 `start/status/stop`，用于 app service 层的真实 loopback。
+- 新增 pytest：中文文件名 loopback、进度阶段、SHA256、回调异常和非法回调参数。
+
+已验证：
+
+- Windows Debug 模块构建与 import 成功。
+- pytest 通过：同进程 loopback、中文文件名 `数据.bin`、SHA256、完整发送进度、回调异常映射和参数校验。
+- CTest 通过：`beamdrop_unit_tests`、`beamdrop_integration_tests`、`beamdrop_python_binding_tests` 共 3/3。
+
+待验证/未完成：
+
+- Linux 仅完成设计约束，尚未构建/import 验证。

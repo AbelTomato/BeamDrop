@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <exception>
 #include <filesystem>
+#include <algorithm>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
@@ -101,6 +102,17 @@ int main() {
     assert(send_progress_events.front().stage == beamdrop::transfer::Stage::TaskStarted);
     assert(send_progress_events.front().file_index == 0);
     assert(send_progress_events.front().file_count == 1);
+    const auto send_transferring = std::find_if(
+        send_progress_events.begin(), send_progress_events.end(), [&](const auto &progress) {
+            return progress.stage == beamdrop::transfer::Stage::Transferring;
+        });
+    assert(send_transferring != send_progress_events.end());
+    assert(send_transferring->relative_path == "hello.txt");
+    assert(send_transferring->current_file_bytes > 0);
+    assert(send_transferring->current_file_bytes <= expected.size());
+    assert(send_transferring->current_file_total_bytes == expected.size());
+    assert(send_transferring->file_index == 1);
+    assert(send_transferring->file_count == 1);
     assert(send_progress_events[send_progress_events.size() - 2].stage ==
            beamdrop::transfer::Stage::FileCompleted);
     assert(send_progress_events[send_progress_events.size() - 2].relative_path == "hello.txt");
@@ -120,6 +132,17 @@ int main() {
     assert(receive_progress_events.front().stage == beamdrop::transfer::Stage::TaskStarted);
     assert(receive_progress_events.front().file_index == 0);
     assert(receive_progress_events.front().file_count == 1);
+    const auto receive_transferring = std::find_if(
+        receive_progress_events.begin(), receive_progress_events.end(), [&](const auto &progress) {
+            return progress.stage == beamdrop::transfer::Stage::Transferring;
+        });
+    assert(receive_transferring != receive_progress_events.end());
+    assert(receive_transferring->relative_path == "hello.txt");
+    assert(receive_transferring->current_file_bytes > 0);
+    assert(receive_transferring->current_file_bytes <= expected.size());
+    assert(receive_transferring->current_file_total_bytes == expected.size());
+    assert(receive_transferring->file_index == 1);
+    assert(receive_transferring->file_count == 1);
     assert(receive_progress_events[receive_progress_events.size() - 2].stage ==
            beamdrop::transfer::Stage::FileCompleted);
     assert(receive_progress_events[receive_progress_events.size() - 2].relative_path ==
