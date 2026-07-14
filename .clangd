@@ -1,5 +1,5 @@
 CompileFlags:
-  CompilationDatabase: build-mingw
+  CompilationDatabase: build/windows-mingw-python-debug
   Add:
     - -Iinclude
     - -std=c++20

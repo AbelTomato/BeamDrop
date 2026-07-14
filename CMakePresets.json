@@ -35,6 +35,17 @@
         "BEAMDROP_BUILD_TESTS": "OFF",
         "BEAMDROP_BUILD_PYTHON": "ON"
       }
+    },
+    {
+      "name": "windows-mingw-python-debug",
+      "inherits": "base-debug",
+      "displayName": "Windows MinGW Python Binding IntelliSense",
+      "generator": "MinGW Makefiles",
+      "cacheVariables": {
+        "BEAMDROP_BUILD_CLI": "OFF",
+        "BEAMDROP_BUILD_TESTS": "OFF",
+        "BEAMDROP_BUILD_PYTHON": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -49,6 +60,10 @@
     {
       "name": "native-bindings-debug",
       "configurePreset": "native-bindings-debug"
+    },
+    {
+      "name": "windows-mingw-python-debug",
+      "configurePreset": "windows-mingw-python-debug"
     }
   ],
   "testPresets": [
