@@ -139,6 +139,15 @@ if (BEAMDROP_BUILD_TESTS)
     )
     target_link_libraries(beamdrop_integration_tests PRIVATE beamdrop_core beamdrop_project_warnings)
     add_test(NAME beamdrop_integration_tests COMMAND beamdrop_integration_tests)
+
+    if (WIN32)
+        add_test(
+            NAME beamdrop_cli_serve_smoke
+            COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/cli_serve_smoke.ps1
+                    -BeamDropExe $<TARGET_FILE:beamdrop>
+        )
+    endif()
 endif()
 
 if (BEAMDROP_BUILD_PYTHON)

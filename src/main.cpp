@@ -1,21 +1,20 @@
 #include "beamdrop/app/ReceiveServerService.hpp"
-#include "beamdrop/app/ReceiveService.hpp"
 #include "beamdrop/app/SendService.hpp"
 #include "beamdrop/app/TransferTask.hpp"
 #include "beamdrop/config/AppConfig.hpp"
 #include "beamdrop/logger/Logger.hpp"
-#include "beamdrop/network/TcpServer.hpp"
 #include "beamdrop/transfer/Progress.hpp"
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
-#include <stop_token>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -186,25 +185,6 @@ ConfigOptions parse_config_options(int argc, char *argv[]) {
     return options;
 }
 
-std::size_t receive_transfer_session(const beamdrop::network::TcpConnection &connection,
-                                     const ServeOptions &options,
-                                     const std::stop_token stop_token) {
-    auto request = beamdrop::app::ReceiveRequest{};
-    request.enable_resume = options.enable_resume;
-    request.progress_callback = print_app_progress;
-    request.save_dir = options.save_dir;
-    request.state_file = options.state_file;
-
-    auto service = beamdrop::app::ReceiveService{};
-    auto result = service.receive(connection, request, stop_token);
-
-    if (result) {
-        return result.value().file_count;
-    } else {
-        throw std::runtime_error(result.error().message);
-    }
-}
-
 int run_serve(int argc, char *argv[]) {
     const auto options = parse_serve_options(argc, argv);
     const beamdrop::logger::Logger logger{options.log_file};
@@ -227,9 +207,23 @@ int run_serve(int argc, char *argv[]) {
         }
 
         std::cout << "beamdrop serve listening on " << options.host << ':' << options.port
-                  << ", save-dir=" << options.save_dir.string() << '\n';
+                  << ", save-dir=" << options.save_dir.string() << " (press Ctrl+C to stop)\n";
 
-        return 0;
+        // ReceiveServerService owns the listening socket and worker. Keep that owner alive for
+        // the lifetime of the CLI command; returning here would immediately destroy it and stop
+        // the receiver before a client can connect.
+        for (;;) {
+            const auto status = server.status();
+            if (status.state == beamdrop::app::ReceiveServerState::Failed) {
+                const auto message = status.last_error ? status.last_error->message
+                                                       : "receive server failed";
+                throw std::runtime_error(message);
+            }
+            if (status.state == beamdrop::app::ReceiveServerState::Stopped) {
+                throw std::runtime_error("receive server stopped unexpectedly");
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
     } catch (const std::exception &error) {
         logger.error(std::string{"serve failed: "} + error.what());
         throw;
