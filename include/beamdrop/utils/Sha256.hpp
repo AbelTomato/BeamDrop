@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <span>
 #include <string>
+#include <stop_token>
 #include <vector>
 
 namespace beamdrop::utils {
@@ -27,6 +28,7 @@ private:
 };
 
 [[nodiscard]] std::string sha256_hex(const std::vector<std::uint8_t>& bytes);
-[[nodiscard]] std::string sha256_file(const std::filesystem::path& path, std::size_t chunk_size);
+[[nodiscard]] std::string sha256_file(const std::filesystem::path& path, std::size_t chunk_size,
+                                      std::stop_token stop_token = {});
 
 } // namespace beamdrop::utils

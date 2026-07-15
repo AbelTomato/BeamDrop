@@ -176,3 +176,54 @@ def test_late_progress_does_not_overwrite_completed_task() -> None:
     task = manager.get(task_id)
     assert task.state is TaskState.COMPLETED
     assert task.progress is None
+
+
+def test_cancel_running_task_reaches_canceled_terminal_state() -> None:
+    release = Event()
+    gateway = FakeNativeGateway(block_until=release)
+    started = Event()
+    gateway.on_send_started = started.set
+    manager = TaskManager(gateway)
+    task_id = manager.create(send_request()).task_id
+
+    async def scenario() -> None:
+        running = asyncio.create_task(manager.run(task_id))
+        assert await asyncio.to_thread(started.wait, 1)
+        canceling = manager.cancel(task_id)
+        assert canceling is not None
+        assert canceling.state is TaskState.CANCELING
+        await running
+
+    asyncio.run(scenario())
+    task = manager.get(task_id)
+    assert task is not None
+    assert task.state is TaskState.CANCELED
+    assert task.error is None
+
+
+def test_cancel_request_racing_with_successful_native_completion_is_completed() -> None:
+    release = Event()
+
+    class LateSuccessGateway(FakeNativeGateway):
+        def send(self, request: SendRequest, on_progress: object, cancel_event: Event | None = None) -> NativeSendResult:
+            self.calls.append(request)
+            assert self.block_until is not None
+            self.block_until.wait(timeout=1)
+            return self.result
+
+    gateway = LateSuccessGateway(block_until=release)
+    started = Event()
+    gateway.on_send_started = started.set
+    manager = TaskManager(gateway)
+    task_id = manager.create(send_request()).task_id
+
+    async def scenario() -> None:
+        running = asyncio.create_task(manager.run(task_id))
+        # The custom gateway does not signal start, so wait until its worker has been entered.
+        await asyncio.sleep(0.02)
+        assert manager.cancel(task_id).state is TaskState.CANCELING
+        release.set()
+        await running
+
+    asyncio.run(scenario())
+    assert manager.get(task_id).state is TaskState.COMPLETED

@@ -16,6 +16,7 @@ enum class ErrorCode {
     FileCloseFailed,
     SizeMismatch,
     ChecksumMismatch,
+    Cancelled,
 };
 
 class TransferError : public std::runtime_error {

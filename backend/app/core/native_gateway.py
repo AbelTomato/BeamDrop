@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from threading import Event, Thread
 from typing import Protocol
 
 from app.schemas.contracts import (
@@ -29,7 +30,7 @@ class NativeGatewayError(Exception):
 
 
 class NativeGateway(Protocol):
-    def send(self, request: SendRequest, on_progress: ProgressCallback) -> NativeSendResult:
+    def send(self, request: SendRequest, on_progress: ProgressCallback, cancel_event: Event | None = None) -> NativeSendResult:
         """Execute the blocking native send operation on a worker thread."""
 
     def start_receiver(self, request: StartReceiverRequest) -> ReceiverSnapshot:
@@ -54,9 +55,21 @@ class PybindNativeGateway:
             native_module = beamdrop_native
         self._native = native_module
 
-    def send(self, request: SendRequest, on_progress: ProgressCallback) -> NativeSendResult:
+    def send(self, request: SendRequest, on_progress: ProgressCallback, cancel_event: Event | None = None) -> NativeSendResult:
+        operation = self._native.SendOperation()
+        watcher = None
+        completed = Event()
+        if cancel_event is not None:
+            def watch_for_cancellation() -> None:
+                while not completed.is_set():
+                    if cancel_event.wait(timeout=0.05):
+                        operation.cancel()
+                        return
+
+            watcher = Thread(target=watch_for_cancellation, daemon=True)
+            watcher.start()
         try:
-            native_result = self._native.send(
+            native_result = operation.run(
                 [request.source_path],
                 request.target_host,
                 request.target_port,
@@ -65,6 +78,10 @@ class PybindNativeGateway:
             )
         except Exception as error:
             raise self._to_gateway_error(error) from error
+        finally:
+            completed.set()
+            if watcher is not None:
+                watcher.join()
 
         return NativeSendResult(file_count=native_result.file_count, total_bytes=native_result.total_bytes)
 

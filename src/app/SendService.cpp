@@ -108,7 +108,8 @@ ServiceResult<SendResult> SendService::send(const SendRequest &request) const {
             }
         };
 
-        beamdrop::transfer::Sender sender{connection, progress_callback, request.chunk_size};
+        beamdrop::transfer::Sender sender{connection, progress_callback, request.chunk_size,
+                                          request.stop_token};
         sender.send_task(entries);
 
         if (auto error = check_cancelled(request.stop_token)) {
@@ -139,6 +140,10 @@ ServiceResult<SendResult> SendService::send(const SendRequest &request) const {
 
         case beamdrop::transfer::ErrorCode::InvalidConfiguration:
             service_code = ErrorCode::InvalidRequest;
+            break;
+
+        case beamdrop::transfer::ErrorCode::Cancelled:
+            service_code = ErrorCode::Cancelled;
             break;
 
         default:

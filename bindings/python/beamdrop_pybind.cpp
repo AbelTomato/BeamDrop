@@ -8,6 +8,7 @@
 #include "pybind11/pytypes.h"
 #include "pyerrors.h"
 #include <memory>
+#include <stop_token>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -31,6 +32,25 @@ namespace {
 class PythonProgressCallbackError : public std::runtime_error {
   public:
     PythonProgressCallbackError(const std::string &message) : std::runtime_error{message} {}
+};
+
+class SendOperation {
+  public:
+    void cancel() noexcept {
+        stop_source_.request_stop();
+    }
+
+    [[nodiscard]] std::stop_token stop_token() const noexcept {
+        return stop_source_.get_token();
+    }
+
+    beamdrop::app::ServiceResult<beamdrop::app::SendResult>
+    run(const beamdrop::app::SendRequest &request) const {
+        return beamdrop::app::SendService{}.send(request);
+    }
+
+  private:
+    std::stop_source stop_source_;
 };
 } // namespace
 
@@ -64,10 +84,14 @@ PYBIND11_MODULE(beamdrop_native, m) {
         PyErr_NewException("beamdrop_native.BeamDropError", PyExc_RuntimeError, nullptr));
     m.attr("BeamDropError") = beamdrop_error;
 
-    m.def(
-        "send",
-        [beamdrop_error](const std::vector<std::string> &paths, const std::string &host, int port,
-                         std::size_t chunk_size, py::object on_progress) {
+    py::class_<SendOperation, std::shared_ptr<SendOperation>>(m, "SendOperation")
+        .def(py::init<>())
+        .def("cancel", &SendOperation::cancel)
+        .def(
+            "run",
+            [beamdrop_error](SendOperation &operation, const std::vector<std::string> &paths,
+                             const std::string &host, int port, std::size_t chunk_size,
+                             py::object on_progress) {
             if (port < 0 || port > 65535) {
                 throw py::value_error("port must be in range 0..65535");
             }
@@ -84,6 +108,9 @@ PYBIND11_MODULE(beamdrop_native, m) {
             for (const auto &path : paths) {
                 request.paths.emplace_back(path);
             }
+            // Set the token while holding GIL.  Do not copy SendRequest after
+            // releasing GIL: its std::function may own a py::function.
+            request.stop_token = operation.stop_token();
 
             if (!on_progress.is_none()) {
                 py::function callback = py::reinterpret_borrow<py::function>(on_progress);
@@ -104,13 +131,24 @@ PYBIND11_MODULE(beamdrop_native, m) {
             auto result = beamdrop::app::ServiceResult<beamdrop::app::SendResult>::success({});
             {
                 py::gil_scoped_release release;
-                result = beamdrop::app::SendService{}.send(request);
+                result = operation.run(request);
             }
 
             if (!result) {
                 raise_service_error(beamdrop_error, result.error());
             }
             return result.value();
+            },
+            py::arg("paths"), py::arg("host"), py::arg("port"),
+            py::arg("chunk_size") = 1024 * 1024, py::arg("on_progress") = py::none());
+
+    m.def(
+        "send",
+        [beamdrop_error](const std::vector<std::string> &paths, const std::string &host, int port,
+                         std::size_t chunk_size, py::object on_progress) {
+            auto operation = std::make_shared<SendOperation>();
+            py::object operation_object = py::cast(operation);
+            return operation_object.attr("run")(paths, host, port, chunk_size, on_progress);
         },
         py::arg("paths"), py::arg("host"), py::arg("port"), py::arg("chunk_size") = 1024 * 1024,
         py::arg("on_progress") = py::none());

@@ -24,9 +24,9 @@ filesystem::FileEntry make_single_file_entry(const std::filesystem::path &source
 } // namespace
 
 Sender::Sender(const network::TcpConnection &connection, ProgressCallback progress_callback,
-               std::size_t chunk_size)
+               std::size_t chunk_size, std::stop_token stop_token)
     : connection_(connection), progress_callback_(std::move(progress_callback)),
-      chunk_size_(chunk_size) {
+      chunk_size_(chunk_size), stop_token_(stop_token) {
     if (chunk_size_ == 0) {
         throw TransferError{ErrorCode::InvalidConfiguration,
                             "sender chunk_size must be greater than zero"};
@@ -40,8 +40,11 @@ void Sender::send_file(const std::filesystem::path &source_path,
 
 void Sender::send_one_file(const std::filesystem::path &source_path, const std::string &relative_path,
                            std::size_t file_index, std::size_t file_count) const {
+    if (stop_token_.stop_requested()) {
+        throw TransferError{ErrorCode::Cancelled, "send cancelled"};
+    }
     const auto file_size = std::filesystem::file_size(source_path);
-    const auto file_hash = utils::sha256_file(source_path, chunk_size_);
+    const auto file_hash = utils::sha256_file(source_path, chunk_size_, stop_token_);
 
     protocol::Packet info_packet;
     info_packet.header.type = protocol::PacketType::FileInfo;
@@ -73,6 +76,9 @@ void Sender::send_one_file(const std::filesystem::path &source_path, const std::
     std::vector<std::uint8_t> buffer(chunk_size_);
     std::uint64_t sent_size = resume_ack.offset;
     while (input) {
+        if (stop_token_.stop_requested()) {
+            throw TransferError{ErrorCode::Cancelled, "send cancelled"};
+        }
         input.read(reinterpret_cast<char *>(buffer.data()),
                    static_cast<std::streamsize>(buffer.size()));
         const auto read_count = input.gcount();
@@ -115,6 +121,9 @@ void Sender::send_task(const std::vector<filesystem::FileEntry> &entries) const 
                                          Stage::TaskStarted});
     }
     for (std::size_t index = 0; index < entries.size(); ++index) {
+        if (stop_token_.stop_requested()) {
+            throw TransferError{ErrorCode::Cancelled, "send cancelled"};
+        }
         const auto &entry = entries[index];
         send_one_file(entry.source_path, entry.relative_path, index + 1, entries.size());
     }

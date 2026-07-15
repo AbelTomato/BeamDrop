@@ -6,6 +6,7 @@
 
 #include <filesystem>
 #include <cstddef>
+#include <stop_token>
 #include <string>
 #include <vector>
 
@@ -15,7 +16,8 @@ class Sender {
 public:
     explicit Sender(const network::TcpConnection& connection,
                     ProgressCallback progress_callback = {},
-                    std::size_t chunk_size = 1024 * 1024);
+                    std::size_t chunk_size = 1024 * 1024,
+                    std::stop_token stop_token = {});
 
     void send_file(const std::filesystem::path& source_path, const std::string& relative_path) const;
     void send_task(const std::vector<filesystem::FileEntry>& entries) const;
@@ -30,6 +32,7 @@ private:
     const network::TcpConnection& connection_;
     ProgressCallback progress_callback_;
     std::size_t chunk_size_;
+    std::stop_token stop_token_;
 };
 
 } // namespace beamdrop::transfer
