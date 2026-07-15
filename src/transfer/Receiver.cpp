@@ -1,38 +1,38 @@
 #include "beamdrop/transfer/Receiver.hpp"
 
-#include "beamdrop/filesystem/FileUtils.hpp"
 #include "beamdrop/protocol/PacketIO.hpp"
 #include "beamdrop/protocol/PacketType.hpp"
 #include "beamdrop/transfer/FileInfoCodec.hpp"
+#include "beamdrop/transfer/Progress.hpp"
 #include "beamdrop/transfer/ResumeAckCodec.hpp"
 #include "beamdrop/transfer/ResumeManager.hpp"
+#include "beamdrop/transfer/TransferError.hpp"
 #include "beamdrop/utils/Sha256.hpp"
 
 #include <fstream>
-#include <stdexcept>
 #include <string>
 #include <utility>
 
 namespace beamdrop::transfer {
 namespace {
 
-std::filesystem::path safe_join(const std::filesystem::path& save_dir,
-                                const std::string& relative_path) {
+std::filesystem::path safe_join(const std::filesystem::path &save_dir,
+                                const std::string &relative_path) {
     const std::filesystem::path path{relative_path};
     if (path.is_absolute()) {
-        throw std::runtime_error("absolute receive path is not allowed");
+        throw TransferError{ErrorCode::UnsafePath, "absolute receive path is not allowed"};
     }
 
-    for (const auto& part : path) {
+    for (const auto &part : path) {
         if (part == "..") {
-            throw std::runtime_error("path traversal is not allowed");
+            throw TransferError{ErrorCode::UnsafePath, "path traversal is not allowed"};
         }
     }
 
     return save_dir / path;
 }
 
-std::uint64_t existing_file_size(const std::filesystem::path& path) {
+std::uint64_t existing_file_size(const std::filesystem::path &path) {
     if (!std::filesystem::exists(path)) {
         return 0;
     }
@@ -42,38 +42,31 @@ std::uint64_t existing_file_size(const std::filesystem::path& path) {
     return static_cast<std::uint64_t>(std::filesystem::file_size(path));
 }
 
-std::uint64_t trusted_resume_offset(const ResumeManager& resume_manager,
-                                    const FileInfo& file_info,
-                                    const std::filesystem::path& output_path) {
-    const auto stored_offset = resume_manager.find_offset(file_info.relative_path,
-                                                          file_info.size,
-                                                          file_info.sha256)
-                                   .value_or(0);
+std::uint64_t trusted_resume_offset(const ResumeManager &resume_manager, const FileInfo &file_info,
+                                    const std::filesystem::path &output_path) {
+    const auto stored_offset =
+        resume_manager.find_offset(file_info.relative_path, file_info.size, file_info.sha256)
+            .value_or(0);
     const auto on_disk_size = existing_file_size(output_path);
     return std::min({stored_offset, on_disk_size, file_info.size});
 }
 
 } // namespace
 
-Receiver::Receiver(const network::TcpConnection& connection,
-                   ProgressCallback progress_callback,
-                   bool enable_resume,
-                   std::filesystem::path state_file)
-    : connection_(connection),
-      progress_callback_(std::move(progress_callback)),
-      enable_resume_(enable_resume),
-      state_file_(std::move(state_file)) {}
+Receiver::Receiver(const network::TcpConnection &connection, ProgressCallback progress_callback,
+                   bool enable_resume, std::filesystem::path state_file)
+    : connection_(connection), progress_callback_(std::move(progress_callback)),
+      enable_resume_(enable_resume), state_file_(std::move(state_file)) {}
 
-void Receiver::receive_one_file(const std::filesystem::path& save_dir) const {
-    receive_one_file(save_dir, 1, 1);
+void Receiver::receive_file(const std::filesystem::path &save_dir) const {
+    receive_task(save_dir, 1);
 }
 
-void Receiver::receive_one_file(const std::filesystem::path& save_dir,
-                                std::size_t file_index,
+void Receiver::receive_one_file(const std::filesystem::path &save_dir, std::size_t file_index,
                                 std::size_t file_count) const {
     const auto info_packet = protocol::read_packet(connection_);
     if (info_packet.header.type != protocol::PacketType::FileInfo) {
-        throw std::runtime_error("expected FILE_INFO packet");
+        throw TransferError{ErrorCode::UnexpectedPacket, "expected FILE_INFO packet"};
     }
 
     const auto file_info = FileInfoCodec::decode(info_packet.payload);
@@ -84,9 +77,8 @@ void Receiver::receive_one_file(const std::filesystem::path& save_dir,
     }
 
     const ResumeManager resume_manager{state_file_};
-    const auto resume_offset = enable_resume_
-                                   ? trusted_resume_offset(resume_manager, file_info, output_path)
-                                   : 0;
+    const auto resume_offset =
+        enable_resume_ ? trusted_resume_offset(resume_manager, file_info, output_path) : 0;
 
     protocol::Packet ack_packet;
     ack_packet.header.type = protocol::PacketType::ResumeAck;
@@ -101,7 +93,8 @@ void Receiver::receive_one_file(const std::filesystem::path& save_dir,
                                              : (std::ios::binary | std::ios::trunc);
     std::ofstream output(output_path, open_mode);
     if (!output) {
-        throw std::runtime_error("failed to open output file: " + output_path.string());
+        throw TransferError{ErrorCode::FileOpenFailed,
+                            "failed to open output file: " + output_path.string()};
     }
 
     std::uint64_t received_size = resume_offset;
@@ -112,60 +105,71 @@ void Receiver::receive_one_file(const std::filesystem::path& save_dir,
             break;
         }
         if (packet.header.type != protocol::PacketType::Data) {
-            throw std::runtime_error("expected DATA or FILE_END packet");
+            throw TransferError{ErrorCode::UnexpectedPacket, "expected DATA or FILE_END packet"};
         }
 
         received_size += packet.payload.size();
         if (received_size > file_info.size) {
-            throw std::runtime_error("received data size exceeds FILE_INFO size");
+            throw TransferError{ErrorCode::SizeMismatch,
+                                "received data size exceeds FILE_INFO size"};
         }
 
         if (!packet.payload.empty()) {
-            output.write(reinterpret_cast<const char*>(packet.payload.data()),
+            output.write(reinterpret_cast<const char *>(packet.payload.data()),
                          static_cast<std::streamsize>(packet.payload.size()));
             if (!output) {
-                throw std::runtime_error("failed to write output file: " + output_path.string());
+                throw TransferError{ErrorCode::FileWriteFailed,
+                                    "failed to write output file: " + output_path.string()};
             }
         }
 
         if (enable_resume_) {
-            resume_manager.update_offset(file_info.relative_path,
-                                         file_info.size,
-                                         file_info.sha256,
+            resume_manager.update_offset(file_info.relative_path, file_info.size, file_info.sha256,
                                          received_size);
         }
 
         if (progress_callback_) {
-            progress_callback_(ProgressEvent{ProgressDirection::Receive,
-                                             file_info.relative_path,
-                                             received_size,
-                                             file_info.size,
-                                             file_index,
-                                             file_count,
-                                             received_size == file_info.size});
+            progress_callback_(ProgressEvent{ProgressDirection::Receive, file_info.relative_path,
+                                             received_size, file_info.size, file_index, file_count,
+                                             Stage::Transferring});
         }
     }
 
     output.close();
     if (!output) {
-        throw std::runtime_error("failed to close output file: " + output_path.string());
+        throw TransferError{ErrorCode::FileCloseFailed,
+                            "failed to close output file: " + output_path.string()};
     }
 
     if (received_size != file_info.size) {
-        throw std::runtime_error("received data size mismatch");
+        throw TransferError{ErrorCode::SizeMismatch, "received data size mismatch"};
     }
     if (utils::sha256_file(output_path, 1024 * 1024) != file_info.sha256) {
-        throw std::runtime_error("received data sha256 mismatch");
+        throw TransferError{ErrorCode::ChecksumMismatch, "received data sha256 mismatch"};
     }
 
     if (enable_resume_) {
         resume_manager.clear(file_info.relative_path, file_info.size, file_info.sha256);
     }
+
+    if (progress_callback_) {
+        progress_callback_(ProgressEvent{ProgressDirection::Receive, file_info.relative_path,
+                                         file_info.size, file_info.size, file_index, file_count,
+                                         Stage::FileCompleted});
+    }
 }
 
-void Receiver::receive_files(const std::filesystem::path& save_dir, std::size_t file_count) const {
+void Receiver::receive_task(const std::filesystem::path &save_dir, std::size_t file_count) const {
+    if (progress_callback_) {
+        progress_callback_(ProgressEvent{ProgressDirection::Receive, "", 0, 0, 0, file_count,
+                                         Stage::TaskStarted});
+    }
     for (std::size_t index = 0; index < file_count; ++index) {
         receive_one_file(save_dir, index + 1, file_count);
+    }
+    if (progress_callback_) {
+        progress_callback_(ProgressEvent{ProgressDirection::Receive, "", 0, 0, file_count,
+                                         file_count, Stage::TaskCompleted});
     }
 }
 

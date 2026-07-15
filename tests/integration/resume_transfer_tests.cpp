@@ -22,6 +22,8 @@ using beamdrop::transfer::ResumeManager;
 using beamdrop::transfer::Sender;
 
 int main() {
+    using namespace std::chrono_literals;
+
     constexpr std::uint16_t port = 19093;
 
     const auto base_dir = std::filesystem::temp_directory_path() / "beamdrop_resume_transfer_test";
@@ -35,19 +37,16 @@ int main() {
     std::filesystem::remove_all(base_dir);
     std::filesystem::create_directories(send_dir);
 
-    const std::vector<std::uint8_t> expected = {
-        'B', 'e', 'a', 'm', 'D', 'r', 'o', 'p', '\n',
-        'r', 'e', 's', 'u', 'm', 'e', '\n',
-        'p', 'a', 'y', 'l', 'o', 'a', 'd', '\n'};
+    const std::vector<std::uint8_t> expected = {'B',  'e', 'a', 'm', 'D', 'r', 'o', 'p',
+                                                '\n', 'r', 'e', 's', 'u', 'm', 'e', '\n',
+                                                'p',  'a', 'y', 'l', 'o', 'a', 'd', '\n'};
     const std::vector<std::uint8_t> existing_prefix{expected.begin(), expected.begin() + 12};
 
     beamdrop::filesystem::write_file(source_path, expected);
     beamdrop::filesystem::write_file(received_path, existing_prefix);
 
     const auto source_hash = beamdrop::utils::sha256_file(source_path, 4);
-    ResumeManager{state_file}.update_offset(relative_path,
-                                            expected.size(),
-                                            source_hash,
+    ResumeManager{state_file}.update_offset(relative_path, expected.size(), source_hash,
                                             existing_prefix.size());
 
     std::exception_ptr server_error;
@@ -56,7 +55,7 @@ int main() {
             TcpServer server{"127.0.0.1", port};
             auto connection = server.accept_one();
             Receiver receiver{connection, {}, true, state_file};
-            receiver.receive_one_file(receive_dir);
+            receiver.receive_file(receive_dir);
         } catch (...) {
             server_error = std::current_exception();
         }

@@ -1,173 +1,109 @@
 # BeamDrop / 邻光
 
-BeamDrop（邻光）是一个面向局域网的轻量文件传输工具，聚焦在同一局域网内通过命令行完成可靠的文件投递。
+本机 GUI 演示：React → FastAPI → pybind11 → C++ 传输核心。
 
-当前状态：C++ CLI 局域网文件传输 MVP 已完成。当前版本支持在局域网内通过命令行发送单文件、多文件和目录，并包含分块传输、断点续传、SHA256 校验、配置加载、基础进度输出和文件日志。
+## 演示配置
 
-## 项目定位
+| 项目 | 值 |
+| --- | --- |
+| GUI | `http://127.0.0.1:5173` |
+| 后端 | `http://127.0.0.1:8000` |
+| 接收地址 | `127.0.0.1:9090` |
+| Linux 接收目录 | `/tmp/beamdrop-e2e/received` |
+| Node | 20.19+，推荐 Node 22 |
+| Python | 3.12+ |
 
-BeamDrop 不以“复刻 AirDrop”为目标，而是提供一个清晰、可维护的局域网文件传输核心：
+## Windows：构建并启动 GUI
 
-- 单文件发送
-- 多路径发送
-- 文件夹递归发送
-- TCP 传输
-- 项目内 Packet 协议
-- HELLO manifest 会话头
-- FILE_INFO JSON payload
-- RESUME_ACK offset 协商
-- 文件内容分块传输
-- 断点续传状态文件
-- SHA256 校验
+在仓库根目录执行：
 
-## 技术栈
+```powershell
+# 首次初始化 Python 环境
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install pybind11
+.\.venv\Scripts\python.exe -m pip install -e ".\backend[dev]"
 
-- C++20
-- CMake
-- MinGW / GCC
-- 项目内 SHA256 实现
-- CTest
+# 构建 pybind 模块
+cmake --preset windows-mingw-python-debug
+cmake --build --preset windows-mingw-python-debug --parallel
 
-## 目录结构
-
-```text
-src/
-  app/
-  cli/
-  network/
-  protocol/
-  transfer/
-  filesystem/
-  config/
-  logger/
-  utils/
-
-include/beamdrop/
-  app/
-  cli/
-  network/
-  protocol/
-  transfer/
-  filesystem/
-  config/
-  logger/
-  utils/
-
-tests/
-  unit/
-  integration/
-
-docs/
-config/
-scripts/
-cmake/
+# 安装前端依赖
+npm --prefix frontend ci
 ```
 
-## 构建
+打开两个终端：
 
-Windows / MinGW：
+```powershell
+# 终端 A：后端
+.\.venv\Scripts\python.exe backend\run_windows_dev.py
+```
+
+```powershell
+# 终端 B：前端
+npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173
+```
+
+浏览器访问 `http://127.0.0.1:5173`。
+
+## Linux：构建并启动 GUI
+
+在仓库根目录执行：
 
 ```bash
-cmake -S . -B build-mingw -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug
-cmake --build build-mingw
+# 首次初始化 Python 环境
+python3.12 -m venv .venv
+./.venv/bin/python -m pip install pybind11
+./.venv/bin/python -m pip install -e './backend[dev]'
+
+# 构建 C++ 与 pybind 模块
+cmake --preset linux-gcc-debug
+cmake --build --preset linux-gcc-debug --parallel
+cmake --preset native-bindings-debug
+cmake --build --preset native-bindings-debug --parallel
+
+# 安装前端依赖
+npm --prefix frontend ci
 ```
 
-运行测试：
+打开两个终端：
 
 ```bash
-ctest --test-dir build-mingw --output-on-failure
+# 终端 A：后端
+export PYTHONPATH="$PWD/build/native-bindings-debug/bindings/python${PYTHONPATH:+:$PYTHONPATH}"
+./.venv/bin/python -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000
 ```
-
-## 使用与配置
-
-### 启动接收端
 
 ```bash
-build-mingw\beamdrop.exe serve --config config\beamdrop.example.json --host 127.0.0.1 --port 9090 --save-dir received --log-file logs\beamdrop.log
+# 终端 B：前端
+npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173
 ```
 
-`serve` 启动后会持续监听，可连续接收多次 `send`。当前退出方式为 Ctrl+C 或终止进程。
+## GUI 演示步骤
 
-参数：
+1. 在“接收服务”填写 `127.0.0.1`、`9090` 与保存目录，点击“启动接收”。
+2. 在“发送文件”填写待发送文件的**绝对路径**、目标 `127.0.0.1`、端口 `9090`，点击“发送文件”。
+3. 观察任务状态和进度变为 `completed`。
+4. 停止接收服务，确认最终状态为 `stopped`。
 
-| 参数         | 默认值              | 说明                                   |
-| ------------ | ------------------- | -------------------------------------- |
-| `--host`     | `0.0.0.0`           | 监听地址                               |
-| `--port`     | `9090`              | 监听端口                               |
-| `--save-dir` | `received`          | 文件保存目录                           |
-| `--log-file` | `logs/beamdrop.log` | 日志文件路径                           |
-| `--config`   | 无                  | 配置文件路径，可读取续传配置和日志配置 |
-
-### 生成和查看配置
-
-生成默认配置：
+Linux 测试文件与 SHA256 验证：
 
 ```bash
-build-mingw\beamdrop.exe config init --path config\beamdrop.json
+mkdir -p /tmp/beamdrop-e2e/source /tmp/beamdrop-e2e/received
+printf 'BeamDrop Linux E2E\n' > /tmp/beamdrop-e2e/source/small.txt
+: > /tmp/beamdrop-e2e/source/empty.bin
+printf '中文文件名内容\n' > /tmp/beamdrop-e2e/source/数据.txt
+
+sha256sum /tmp/beamdrop-e2e/source/small.txt /tmp/beamdrop-e2e/received/small.txt
+sha256sum /tmp/beamdrop-e2e/source/empty.bin /tmp/beamdrop-e2e/received/empty.bin
+sha256sum /tmp/beamdrop-e2e/source/数据.txt /tmp/beamdrop-e2e/received/数据.txt
 ```
 
-查看配置：
+## 测试命令
 
-```bash
-build-mingw\beamdrop.exe config show --path config\beamdrop.json
+```powershell
+ctest --preset windows-mingw-debug --output-on-failure
+.\.venv\Scripts\python.exe -m pytest backend\tests -q
+npm --prefix frontend test
+npm --prefix frontend run lint
+npm --prefix frontend run build
 ```
-
-`config init` 会创建父目录并写入默认配置；`config show` 会读取指定配置文件并输出规范化后的 JSON。
-
-### 发送单文件
-
-```bash
-build-mingw\beamdrop.exe send .\README.md --to 127.0.0.1:9090 --config config\beamdrop.example.json --chunk-size 65536 --log-file logs\beamdrop.log
-```
-
-### 发送目录
-
-```bash
-build-mingw\beamdrop.exe send .\docs --to 127.0.0.1:9090
-```
-
-### 一次发送多个路径
-
-```bash
-build-mingw\beamdrop.exe send .\README.md .\docs --to 127.0.0.1:9090
-```
-
-### 配置文件示例
-
-当前 `serve` / `send` 已支持通过 `--config` 读取配置文件。命令行显式参数会覆盖已加载配置；`send --chunk-size` 会覆盖 `transfer.chunk_size`。
-
-`serve` 会读取 `transfer.enable_resume` 和 `transfer.state_file`。开启续传后，接收端会根据状态文件和本地已存在文件计算可信 offset；发送端收到 `RESUME_ACK` 后从该 offset 继续发送。状态记录绑定 `relative_path + size + sha256`，传输完成且校验通过后会清理对应记录。
-
-当前传输会话以 `HELLO` packet 开始，payload 使用 `beamdrop-manifest-v1` 文本 manifest，包含文件数量和总字节数；随后每个文件统一使用 `FILE_INFO -> RESUME_ACK -> DATA -> FILE_END`，最后用 `FINISH` 结束。
-
-示例配置位于：
-
-```text
-config/beamdrop.example.json
-```
-
-内容示例：
-
-```json
-{
-  "server": {
-    "host": "0.0.0.0",
-    "port": 9090,
-    "save_dir": "./received"
-  },
-  "transfer": {
-    "chunk_size": 1048576,
-    "enable_resume": true,
-    "verify_sha256": true,
-    "state_file": "./transfer_state.json"
-  },
-  "log": {
-    "level": "info",
-    "file": "./logs/beamdrop.log"
-  }
-}
-```
-
-## 设计文档
-
-核心设计文档位于 `docs/`。

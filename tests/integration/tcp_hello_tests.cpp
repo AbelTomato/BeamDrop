@@ -17,6 +17,8 @@ using beamdrop::protocol::Packet;
 using beamdrop::protocol::PacketType;
 
 int main() {
+    using namespace std::chrono_literals;
+
     constexpr std::uint16_t port = 19090;
     std::exception_ptr server_error;
     Packet received_by_server;
@@ -25,6 +27,7 @@ int main() {
         try {
             TcpServer server{"127.0.0.1", port};
             auto connection = server.accept_one();
+
             received_by_server = beamdrop::protocol::read_packet(connection);
 
             Packet response;

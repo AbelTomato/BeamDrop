@@ -1,0 +1,85 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base-debug",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "windows-mingw-debug",
+      "inherits": "base-debug",
+      "displayName": "Windows MinGW Debug",
+      "generator": "MinGW Makefiles"
+    },
+    {
+      "name": "linux-gcc-debug",
+      "inherits": "base-debug",
+      "displayName": "Linux GCC Debug"
+    },
+    {
+      "name": "native-bindings-debug",
+      "inherits": "base-debug",
+      "displayName": "Native Bindings Debug",
+      "cacheVariables": {
+        "BEAMDROP_BUILD_CLI": "OFF",
+        "BEAMDROP_BUILD_TESTS": "OFF",
+        "BEAMDROP_BUILD_PYTHON": "ON"
+      }
+    },
+    {
+      "name": "windows-mingw-python-debug",
+      "inherits": "base-debug",
+      "displayName": "Windows MinGW Python Binding IntelliSense",
+      "generator": "MinGW Makefiles",
+      "cacheVariables": {
+        "BEAMDROP_BUILD_CLI": "OFF",
+        "BEAMDROP_BUILD_TESTS": "OFF",
+        "BEAMDROP_BUILD_PYTHON": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-mingw-debug",
+      "configurePreset": "windows-mingw-debug"
+    },
+    {
+      "name": "linux-gcc-debug",
+      "configurePreset": "linux-gcc-debug"
+    },
+    {
+      "name": "native-bindings-debug",
+      "configurePreset": "native-bindings-debug"
+    },
+    {
+      "name": "windows-mingw-python-debug",
+      "configurePreset": "windows-mingw-python-debug"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "windows-mingw-debug",
+      "configurePreset": "windows-mingw-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-gcc-debug",
+      "configurePreset": "linux-gcc-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

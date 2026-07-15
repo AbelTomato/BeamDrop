@@ -15,8 +15,8 @@ public:
                       bool enable_resume = false,
                       std::filesystem::path state_file = "transfer_state.json");
 
-    void receive_one_file(const std::filesystem::path& save_dir) const;
-    void receive_files(const std::filesystem::path& save_dir, std::size_t file_count) const;
+    void receive_file(const std::filesystem::path& save_dir) const;
+    void receive_task(const std::filesystem::path& save_dir, std::size_t file_count) const;
 
 private:
     void receive_one_file(const std::filesystem::path& save_dir,

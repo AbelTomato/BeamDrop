@@ -1,22 +1,20 @@
 #include "beamdrop/protocol/Serializer.hpp"
 
-#include <algorithm>
-
 namespace beamdrop::protocol {
 namespace {
 
-void append_u16(std::vector<std::uint8_t>& out, std::uint16_t value) {
+void append_u16(std::vector<std::uint8_t> &out, std::uint16_t value) {
     out.push_back(static_cast<std::uint8_t>((value >> 8) & 0xFF));
     out.push_back(static_cast<std::uint8_t>(value & 0xFF));
 }
 
-void append_u32(std::vector<std::uint8_t>& out, std::uint32_t value) {
+void append_u32(std::vector<std::uint8_t> &out, std::uint32_t value) {
     for (int shift = 24; shift >= 0; shift -= 8) {
         out.push_back(static_cast<std::uint8_t>((value >> shift) & 0xFF));
     }
 }
 
-void append_u64(std::vector<std::uint8_t>& out, std::uint64_t value) {
+void append_u64(std::vector<std::uint8_t> &out, std::uint64_t value) {
     for (int shift = 56; shift >= 0; shift -= 8) {
         out.push_back(static_cast<std::uint8_t>((value >> shift) & 0xFF));
     }
@@ -24,7 +22,7 @@ void append_u64(std::vector<std::uint8_t>& out, std::uint64_t value) {
 
 } // namespace
 
-std::vector<std::uint8_t> Serializer::encode(const Packet& packet) {
+std::vector<std::uint8_t> Serializer::encode(const Packet &packet) {
     PacketHeader header = packet.header;
     header.length = packet.payload.size();
 

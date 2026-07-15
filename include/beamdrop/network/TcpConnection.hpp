@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <span>
 #include <vector>
@@ -21,13 +22,17 @@ public:
     TcpConnection& operator=(TcpConnection&& other) noexcept;
 
     [[nodiscard]] bool valid() const noexcept;
+    // Interrupt pending reads/writes and release the socket. This is safe to
+    // call from a service-control thread while another thread is blocked in
+    // read_exact().
+    void shutdown() noexcept;
     void close() noexcept;
 
     void write_all(std::span<const std::uint8_t> bytes) const;
     [[nodiscard]] std::vector<std::uint8_t> read_exact(std::size_t size) const;
 
 private:
-    NativeHandle handle_{-1};
+    std::atomic<NativeHandle> handle_{-1};
 };
 
 } // namespace beamdrop::network

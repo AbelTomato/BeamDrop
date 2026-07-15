@@ -1,16 +1,12 @@
+#include "beamdrop/app/ReceiveServerService.hpp"
+#include "beamdrop/app/SendService.hpp"
+#include "beamdrop/app/TransferTask.hpp"
 #include "beamdrop/config/AppConfig.hpp"
-#include "beamdrop/filesystem/FileScanner.hpp"
 #include "beamdrop/logger/Logger.hpp"
-#include "beamdrop/network/TcpClient.hpp"
-#include "beamdrop/network/TcpServer.hpp"
-#include "beamdrop/protocol/Packet.hpp"
-#include "beamdrop/protocol/PacketIO.hpp"
-#include "beamdrop/protocol/PacketType.hpp"
 #include "beamdrop/transfer/Progress.hpp"
-#include "beamdrop/transfer/Receiver.hpp"
-#include "beamdrop/transfer/Sender.hpp"
-#include "beamdrop/transfer/TransferManifest.hpp"
 
+#include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
@@ -18,21 +14,25 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 namespace {
 
 void print_usage() {
-    std::cout << "BeamDrop / 邻光\n"
-              << "\n"
-              << "Usage:\n"
-              << "  beamdrop serve [--config config/beamdrop.example.json] [--host 0.0.0.0] [--port 9090] [--save-dir ./received] [--log-file ./logs/beamdrop.log]\n"
-              << "  beamdrop send <path...> --to <host:port> [--config config/beamdrop.example.json] [--chunk-size 1048576] [--log-file ./logs/beamdrop.log]\n"
-              << "  beamdrop config init|show\n"
-              << "\n";
+    std::cout
+        << "BeamDrop / 邻光\n"
+        << "\n"
+        << "Usage:\n"
+        << "  beamdrop serve [--config config/beamdrop.example.json] [--host 0.0.0.0] [--port "
+           "9090] [--save-dir ./received] [--log-file ./logs/beamdrop.log]\n"
+        << "  beamdrop send <path...> --to <host:port> [--config config/beamdrop.example.json] "
+           "[--chunk-size 1048576] [--log-file ./logs/beamdrop.log]\n"
+        << "  beamdrop config init|show\n"
+        << "\n";
 }
 
-std::uint16_t parse_port(const std::string& text) {
+std::uint16_t parse_port(const std::string &text) {
     const auto value = std::stoul(text);
     if (value > 65535) {
         throw std::runtime_error("port out of range: " + text);
@@ -45,7 +45,7 @@ struct Endpoint {
     std::uint16_t port;
 };
 
-Endpoint parse_endpoint(const std::string& text) {
+Endpoint parse_endpoint(const std::string &text) {
     const auto separator = text.rfind(':');
     if (separator == std::string::npos || separator == 0 || separator + 1 >= text.size()) {
         throw std::runtime_error("--to must use host:port format");
@@ -54,26 +54,20 @@ Endpoint parse_endpoint(const std::string& text) {
     return Endpoint{text.substr(0, separator), parse_port(text.substr(separator + 1))};
 }
 
-std::uint64_t total_entry_bytes(const std::vector<beamdrop::filesystem::FileEntry>& entries) {
-    std::uint64_t total = 0;
-    for (const auto& entry : entries) {
-        total += entry.size;
-    }
-    return total;
-}
+void print_app_progress(const beamdrop::app::TransferProgress &progress) {
+    const auto verb =
+        progress.direction == beamdrop::app::TransferProgress::Direction::Send ? "send" : "receive";
 
-void print_progress(const beamdrop::transfer::ProgressEvent& event) {
-    const auto verb = event.direction == beamdrop::transfer::ProgressDirection::Send ? "send" : "receive";
-    std::cout << "beamdrop " << verb << " [" << event.file_index << '/' << event.file_count << "] "
-              << event.relative_path << ' ' << event.current_file_bytes << '/'
-              << event.current_file_total_bytes << " bytes";
-    if (event.file_complete) {
+    std::cout << "beamdrop " << verb << " [" << progress.file_index << '/' << progress.file_count
+              << "] " << progress.relative_path << ' ' << progress.current_file_bytes << '/'
+              << progress.current_file_total_bytes << " bytes";
+    if (progress.stage == beamdrop::transfer::Stage::TaskCompleted) {
         std::cout << " done";
     }
     std::cout << '\n';
 }
 
-std::string paths_text(const std::vector<std::filesystem::path>& paths) {
+std::string paths_text(const std::vector<std::filesystem::path> &paths) {
     std::ostringstream output;
     for (std::size_t index = 0; index < paths.size(); ++index) {
         if (index > 0) {
@@ -93,7 +87,7 @@ struct ServeOptions {
     std::filesystem::path log_file = "logs/beamdrop.log";
 };
 
-ServeOptions parse_serve_options(int argc, char* argv[]) {
+ServeOptions parse_serve_options(int argc, char *argv[]) {
     auto config = beamdrop::config::default_config();
     ServeOptions options;
     for (int index = 2; index < argc; ++index) {
@@ -134,7 +128,7 @@ struct ConfigOptions {
     std::filesystem::path path = "config/beamdrop.json";
 };
 
-SendOptions parse_send_options(int argc, char* argv[]) {
+SendOptions parse_send_options(int argc, char *argv[]) {
     auto config = beamdrop::config::default_config();
     SendOptions options;
     for (int index = 2; index < argc; ++index) {
@@ -169,7 +163,7 @@ SendOptions parse_send_options(int argc, char* argv[]) {
     return options;
 }
 
-ConfigOptions parse_config_options(int argc, char* argv[]) {
+ConfigOptions parse_config_options(int argc, char *argv[]) {
     if (argc < 3) {
         throw std::runtime_error("config requires init or show");
     }
@@ -191,109 +185,84 @@ ConfigOptions parse_config_options(int argc, char* argv[]) {
     return options;
 }
 
-std::uint64_t receive_transfer_session(const beamdrop::network::TcpConnection& connection,
-                                       const ServeOptions& options,
-                                       const beamdrop::logger::Logger& logger) {
-    const auto hello = beamdrop::protocol::read_packet(connection);
-    if (hello.header.type != beamdrop::protocol::PacketType::Hello) {
-        throw std::runtime_error("expected HELLO packet with transfer manifest");
-    }
-
-    const auto manifest = beamdrop::transfer::TransferManifestCodec::decode(hello.payload);
-    const auto file_count = manifest.file_count;
-    logger.info("serve receiving file_count=" + std::to_string(file_count)
-                + " total_bytes=" + std::to_string(manifest.total_bytes));
-
-    beamdrop::transfer::Receiver receiver{connection,
-                                          print_progress,
-                                          options.enable_resume,
-                                          options.state_file};
-    receiver.receive_files(options.save_dir, static_cast<std::size_t>(file_count));
-
-    const auto finish = beamdrop::protocol::read_packet(connection);
-    if (finish.header.type != beamdrop::protocol::PacketType::Finish) {
-        throw std::runtime_error("expected FINISH packet");
-    }
-
-    return file_count;
-}
-
-int run_serve(int argc, char* argv[]) {
+int run_serve(int argc, char *argv[]) {
     const auto options = parse_serve_options(argc, argv);
     const beamdrop::logger::Logger logger{options.log_file};
-    logger.info("serve starting host=" + options.host + " port=" + std::to_string(options.port)
-                + " save_dir=" + options.save_dir.string());
+    logger.info("serve starting host=" + options.host + " port=" + std::to_string(options.port) +
+                " save_dir=" + options.save_dir.string());
 
     try {
-        beamdrop::network::TcpServer server{options.host, options.port};
+        auto request = beamdrop::app::ReceiveServerRequest{};
+        request.host = options.host;
+        request.port = options.port;
+        request.receive_request.progress_callback = print_app_progress;
+        request.receive_request.enable_resume = options.enable_resume;
+        request.receive_request.state_file = options.state_file;
+        request.receive_request.save_dir = options.save_dir;
+        auto server = beamdrop::app::ReceiveServerService{};
+        auto result = server.start(request);
+
+        if (!result) {
+            throw std::runtime_error(result.error().message);
+        }
 
         std::cout << "beamdrop serve listening on " << options.host << ':' << options.port
-                  << ", save-dir=" << options.save_dir.string() << '\n';
+                  << ", save-dir=" << options.save_dir.string() << " (press Ctrl+C to stop)\n";
 
-        while (true) {
-            try {
-                auto connection = server.accept_one();
-                logger.info("serve accepted connection");
-                const auto file_count = receive_transfer_session(connection, options, logger);
-                std::cout << "beamdrop serve received " << file_count << " file(s)\n";
-                logger.info("serve completed file_count=" + std::to_string(file_count));
-            } catch (const std::exception& error) {
-                logger.error(std::string{"serve connection failed: "} + error.what());
-                std::cerr << "beamdrop serve connection error: " << error.what() << '\n';
+        // ReceiveServerService owns the listening socket and worker. Keep that owner alive for
+        // the lifetime of the CLI command; returning here would immediately destroy it and stop
+        // the receiver before a client can connect.
+        for (;;) {
+            const auto status = server.status();
+            if (status.state == beamdrop::app::ReceiveServerState::Failed) {
+                const auto message = status.last_error ? status.last_error->message
+                                                       : "receive server failed";
+                throw std::runtime_error(message);
             }
+            if (status.state == beamdrop::app::ReceiveServerState::Stopped) {
+                throw std::runtime_error("receive server stopped unexpectedly");
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
-    } catch (const std::exception& error) {
+    } catch (const std::exception &error) {
         logger.error(std::string{"serve failed: "} + error.what());
         throw;
     }
 }
 
-int run_send(int argc, char* argv[]) {
+int run_send(int argc, char *argv[]) {
     const auto options = parse_send_options(argc, argv);
     const beamdrop::logger::Logger logger{options.log_file};
-    logger.info("send starting endpoint=" + options.endpoint.host + ':'
-                + std::to_string(options.endpoint.port) + " paths=" + paths_text(options.paths));
+    logger.info("send starting endpoint=" + options.endpoint.host + ':' +
+                std::to_string(options.endpoint.port) + " paths=" + paths_text(options.paths));
+
+    auto request = beamdrop::app::SendRequest{};
+    request.chunk_size = options.chunk_size;
+    request.host = options.endpoint.host;
+    request.port = options.endpoint.port;
+    request.paths = options.paths;
+    request.progress_callback = print_app_progress;
 
     try {
-        std::vector<beamdrop::filesystem::FileEntry> entries;
-        for (const auto& path : options.paths) {
-            auto scanned = beamdrop::filesystem::scan_files(path);
-            entries.insert(entries.end(), scanned.begin(), scanned.end());
+        auto service = beamdrop::app::SendService{};
+        auto result = service.send(request);
+
+        if (result) {
+            std::cout << "beamdrop send sent " << result.value().file_count << " file(s) to "
+                      << options.endpoint.host << ':' << options.endpoint.port << '\n';
+            logger.info("send completed file_count=" + std::to_string(result.value().file_count));
+            return 0;
+        } else {
+            throw std::runtime_error(result.error().message);
         }
-        logger.info("send scanned file_count=" + std::to_string(entries.size()));
 
-        beamdrop::network::TcpClient client;
-        auto connection = client.connect(options.endpoint.host, options.endpoint.port);
-        logger.info("send connected endpoint=" + options.endpoint.host + ':'
-                    + std::to_string(options.endpoint.port));
-
-        beamdrop::protocol::Packet hello;
-        hello.header.type = beamdrop::protocol::PacketType::Hello;
-        const beamdrop::transfer::TransferManifest manifest{
-            static_cast<std::uint64_t>(entries.size()), total_entry_bytes(entries)};
-        logger.info("send manifest file_count=" + std::to_string(manifest.file_count)
-                    + " total_bytes=" + std::to_string(manifest.total_bytes));
-        hello.payload = beamdrop::transfer::TransferManifestCodec::encode(manifest);
-        beamdrop::protocol::write_packet(connection, hello);
-
-        beamdrop::transfer::Sender sender{connection, print_progress, options.chunk_size};
-        sender.send_files(entries);
-
-        beamdrop::protocol::Packet finish;
-        finish.header.type = beamdrop::protocol::PacketType::Finish;
-        beamdrop::protocol::write_packet(connection, finish);
-
-        std::cout << "beamdrop send sent " << entries.size() << " file(s) to "
-                  << options.endpoint.host << ':' << options.endpoint.port << '\n';
-        logger.info("send completed file_count=" + std::to_string(entries.size()));
-        return 0;
-    } catch (const std::exception& error) {
+    } catch (const std::exception &error) {
         logger.error(std::string{"send failed: "} + error.what());
         throw;
     }
 }
 
-int run_config(int argc, char* argv[]) {
+int run_config(int argc, char *argv[]) {
     const auto options = parse_config_options(argc, argv);
     if (options.action == "init") {
         beamdrop::config::write_config(options.path, beamdrop::config::default_config());
@@ -308,7 +277,7 @@ int run_config(int argc, char* argv[]) {
 
 } // namespace
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
     if (argc <= 1) {
         print_usage();
         return 0;
@@ -331,7 +300,7 @@ int main(int argc, char* argv[]) {
 
         print_usage();
         return 1;
-    } catch (const std::exception& error) {
+    } catch (const std::exception &error) {
         std::cerr << "beamdrop error: " << error.what() << '\n';
         return 1;
     }

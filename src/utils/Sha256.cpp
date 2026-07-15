@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
+#include "beamdrop/transfer/TransferError.hpp"
 
 namespace beamdrop::utils {
 namespace {
@@ -158,7 +159,8 @@ std::string sha256_hex(const std::vector<std::uint8_t>& bytes) {
     return sha256.final_hex();
 }
 
-std::string sha256_file(const std::filesystem::path& path, std::size_t chunk_size) {
+std::string sha256_file(const std::filesystem::path& path, std::size_t chunk_size,
+                        std::stop_token stop_token) {
     if (chunk_size == 0) {
         throw std::runtime_error("sha256_file chunk_size must be greater than zero");
     }
@@ -171,6 +173,9 @@ std::string sha256_file(const std::filesystem::path& path, std::size_t chunk_siz
     Sha256 sha256;
     std::vector<std::uint8_t> buffer(chunk_size);
     while (input) {
+        if (stop_token.stop_requested()) {
+            throw transfer::TransferError{transfer::ErrorCode::Cancelled, "send cancelled"};
+        }
         input.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
         const auto read_count = input.gcount();
         if (read_count > 0) {
