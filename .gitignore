@@ -23,4 +23,9 @@ __pycache__/
 Thumbs.db
 .DS_Store
 
+# 唯一 Python 环境位于仓库根目录；防止误建子项目环境。
 .venv/
+**/.venv/
+
+# 本地 GUI E2E 输入/输出样本可能包含大型文件，不纳入版本库。
+e2e-demo/

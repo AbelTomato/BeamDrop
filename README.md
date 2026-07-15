@@ -28,6 +28,24 @@ BeamDrop 不以“复刻 AirDrop”为目标，而是提供一个清晰、可维
 - 项目内 SHA256 实现
 - CTest
 
+## Python 开发环境
+
+仓库只使用根目录 `.venv/` 作为 Python 3.12+ 开发环境。该环境同时承载 pybind11 构建依赖和 `backend/` 的 FastAPI 开发依赖；不要在子目录创建 `.venv/`。
+
+从仓库根目录初始化：
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install pybind11
+.\.venv\Scripts\python.exe -m pip install -e ".\backend[dev]"
+```
+
+后端测试使用：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest backend\tests -q
+```
+
 ## 目录结构
 
 ```text

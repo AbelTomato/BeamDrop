@@ -1,6 +1,6 @@
-# Slice 5：FastAPI REST 控制面
+# Slice 6：FastAPI REST 与 WebSocket 控制面
 
-当前目录提供 FastAPI 宿主应用层与 REST 权威快照 API；WebSocket 增量事件属于 Slice 6。
+当前目录提供 FastAPI 宿主应用层、REST 权威快照 API 与 WebSocket 增量事件通道。
 
 ## 当前模块
 
@@ -10,6 +10,7 @@
 - `app/core/fake_native_gateway.py`：用于单元测试的确定性 native 替身。
 - `app/schemas/wire.py`：Pydantic JSON DTO 与领域 DTO 的显式转换。
 - `app/main.py`：可注入 `NativeGateway` 的 FastAPI 应用工厂与 REST routes。
+- `app/core/event_bus.py`：线程安全、非权威的 WebSocket 事件扇出。
 
 ## 边界
 
@@ -25,16 +26,22 @@
 - `POST /api/receiver/start` 和 `/stop` 经 `asyncio.to_thread()` 调用可能阻塞的 native 生命周期操作。
 - 所有 4xx 错误统一为 `{"error":{"code", "message", "details"}}`，不泄漏 Pydantic 或日志文本结构。
 - CORS 仅允许 Vite 开发地址 `http://127.0.0.1:5173` 与 `http://localhost:5173`。
-- WebSocket 事件、重连和 sequence 仍属于 Slice 6–7。
+- `GET /ws/events` 仅发送增量事件；连接、页面刷新或 sequence 缺口的状态恢复必须依赖 REST snapshot。
+- 每个客户端拥有独立有界队列。进度事件在慢客户端下可被丢弃，终态事件优先保留；事件发布绝不阻塞 native worker 或任务线程。
+- 连接关闭不会取消任务。heartbeat 只用于发现连接存活，事件 sequence 在应用进程内单调递增。
+- 前端重连、退避、sequence 缺口恢复和 adapter DTO 解析仍属于 Slice 7。
 
 ## 测试环境
 
-请在 `backend/` 建立 Python 3.12+ 虚拟环境后安装开发依赖：
+项目只使用仓库根目录的 Python 3.12+ 虚拟环境 `.venv/`。它同时提供 pybind11 构建依赖和 FastAPI 后端开发依赖；不要在 `backend/` 下创建第二个虚拟环境。
+
+从仓库根目录初始化并安装后端开发依赖：
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
-.\.venv\Scripts\python.exe -m pytest -q
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install pybind11
+.\.venv\Scripts\python.exe -m pip install -e ".\backend[dev]"
+.\.venv\Scripts\python.exe -m pytest backend\tests -q
 ```
 
 ## REST 接口
@@ -46,6 +53,7 @@ POST /api/transfers/send
 POST /api/receiver/start
 POST /api/receiver/stop
 GET  /api/tasks/{task_id}
+GET  /ws/events
 ```
 
 ## Windows 开发启动
@@ -53,7 +61,7 @@ GET  /api/tasks/{task_id}
 先使用 `windows-mingw-python-debug` 预设构建 `beamdrop_native`，再从仓库根目录运行：
 
 ```powershell
-backend\.venv\Scripts\python.exe backend\run_windows_dev.py
+.\.venv\Scripts\python.exe backend\run_windows_dev.py
 ```
 
 该脚本从 `PATH` 中的 `g++.exe` 推导 MinGW runtime DLL 目录；不能自动发现时设置 `BEAMDROP_MINGW_BIN`。它仅解决当前 Windows MinGW 开发环境的 `.pyd` 与运行时 DLL 搜索路径；正式打包启动方式将在后续交付切片确定。
