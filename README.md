@@ -1,359 +1,109 @@
 # BeamDrop / 邻光
 
-BeamDrop（邻光）是一个面向局域网的轻量文件传输工具，聚焦在同一局域网内通过命令行完成可靠的文件投递。
+本机 GUI 演示：React → FastAPI → pybind11 → C++ 传输核心。
 
-当前状态：C++ CLI 局域网文件传输 MVP 与本机 GUI 控制面已完成。CLI 支持单文件、多文件和目录传输；GUI 通过 FastAPI、pybind11 调用同一 C++ app service，提供单文件发送、接收服务启停、任务快照和实时进度。
+## 演示配置
 
-## 项目定位
+| 项目 | 值 |
+| --- | --- |
+| GUI | `http://127.0.0.1:5173` |
+| 后端 | `http://127.0.0.1:8000` |
+| 接收地址 | `127.0.0.1:9090` |
+| Linux 接收目录 | `/tmp/beamdrop-e2e/received` |
+| Node | 20.19+，推荐 Node 22 |
+| Python | 3.12+ |
 
-BeamDrop 不以“复刻 AirDrop”为目标，而是提供一个清晰、可维护的局域网文件传输核心：
+## Windows：构建并启动 GUI
 
-- 单文件发送
-- 多路径发送
-- 文件夹递归发送
-- TCP 传输
-- 项目内 Packet 协议
-- HELLO manifest 会话头
-- FILE_INFO JSON payload
-- RESUME_ACK offset 协商
-- 文件内容分块传输
-- 断点续传状态文件
-- SHA256 校验
-
-## 技术栈
-
-- C++20
-- CMake
-- MinGW / GCC
-- 项目内 SHA256 实现
-- CTest
-- Python 3.12+ / FastAPI / pybind11（GUI 控制面）
-- React 19 / TypeScript / Vite（GUI 控制面，Node 20.19+，推荐 Node 22）
-
-## Python 开发环境
-
-仓库只使用根目录 `.venv/` 作为 Python 3.12+ 开发环境。该环境同时承载 pybind11 构建依赖和 `backend/` 的 FastAPI 开发依赖；不要在子目录创建 `.venv/`。
-
-从仓库根目录初始化：
+在仓库根目录执行：
 
 ```powershell
+# 首次初始化 Python 环境
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install pybind11
 .\.venv\Scripts\python.exe -m pip install -e ".\backend[dev]"
-```
 
-后端测试使用：
-
-```powershell
-.\.venv\Scripts\python.exe -m pytest backend\tests -q
-```
-
-## 目录结构
-
-```text
-src/
-  app/
-  cli/
-  network/
-  protocol/
-  transfer/
-  filesystem/
-  config/
-  logger/
-  utils/
-
-include/beamdrop/
-  app/
-  cli/
-  network/
-  protocol/
-  transfer/
-  filesystem/
-  config/
-  logger/
-  utils/
-
-tests/
-  unit/
-  integration/
-
-docs/
-config/
-scripts/
-cmake/
-```
-
-## 构建
-
-推荐使用 `CMakePresets.json` 固化平台构建目录和选项。
-
-### Windows / MinGW
-
-```bash
-cmake --preset windows-mingw-debug
-cmake --build --preset windows-mingw-debug
-```
-
-运行测试：
-
-```bash
-ctest --preset windows-mingw-debug
-```
-
-旧命令仍可使用：
-
-```bash
-cmake -S . -B build-mingw -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug
-cmake --build build-mingw
-ctest --test-dir build-mingw --output-on-failure
-```
-
-### Linux / GCC
-
-```bash
-cmake --preset linux-gcc-debug
-cmake --build --preset linux-gcc-debug
-```
-
-运行测试：
-
-```bash
-ctest --preset linux-gcc-debug
-```
-
-旧命令仍可使用：
-
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
-ctest --test-dir build --output-on-failure
-```
-
-### 构建选项
-
-| 选项                    | 默认值 | 说明                         |
-| ----------------------- | ------ | ---------------------------- |
-| `BEAMDROP_BUILD_CLI`    | `ON`   | 构建 `beamdrop` CLI          |
-| `BEAMDROP_BUILD_TESTS`  | `ON`   | 构建 CTest 测试 suite        |
-| `BEAMDROP_BUILD_PYTHON` | `OFF`  | 构建后续 pybind11 native 模块 |
-
-当前 CTest 由两个测试可执行文件组成：`beamdrop_unit_tests` 和 `beamdrop_integration_tests`。各测试源文件仍保持原有独立 `main()` 形式，但在 CMake 中编译为 object 并由 suite runner 调用。这样在 `beamdrop_core` 变化时只需要重链接 CLI、unit suite 和 integration suite，避免每个测试目标重复链接。
-
-新增或修改被广泛包含的头文件仍会触发相关 `.cpp` 重编译，这是 C++ 依赖模型的正常行为。若后续头文件改动频繁，可继续通过减少头文件包含、前置声明、PImpl、预编译头或 `ccache` / `sccache` 降低重编译成本；不要通过隐藏头文件依赖来规避正确的增量构建。
-
-## 使用与配置
-
-以下示例按平台区分：
-
-- Windows 使用 `build-mingw\beamdrop.exe` 和反斜杠路径。
-- Linux 使用 `./build/beamdrop` 和正斜杠路径。
-
-### 启动接收端
-
-Windows：
-
-```bash
-build-mingw\beamdrop.exe serve --config config\beamdrop.example.json --host 127.0.0.1 --port 9090 --save-dir received --log-file logs\beamdrop.log
-```
-
-Linux：
-
-```bash
-./build/beamdrop serve --config config/beamdrop.example.json --host 127.0.0.1 --port 9090 --save-dir received --log-file logs/beamdrop.log
-```
-
-`serve` 启动后会持续监听，可连续接收多次 `send`；使用 Ctrl+C 或终止进程退出。
-
-参数：
-
-| 参数         | 默认值              | 说明                                   |
-| ------------ | ------------------- | -------------------------------------- |
-| `--host`     | `0.0.0.0`           | 监听地址                               |
-| `--port`     | `9090`              | 监听端口                               |
-| `--save-dir` | `received`          | 文件保存目录                           |
-| `--log-file` | `logs/beamdrop.log` | 日志文件路径                           |
-| `--config`   | 无                  | 配置文件路径，可读取续传配置和日志配置 |
-
-### 生成和查看配置
-
-生成默认配置：
-
-Windows：
-
-```bash
-build-mingw\beamdrop.exe config init --path config\beamdrop.json
-```
-
-Linux：
-
-```bash
-./build/beamdrop config init --path config/beamdrop.json
-```
-
-查看配置：
-
-Windows：
-
-```bash
-build-mingw\beamdrop.exe config show --path config\beamdrop.json
-```
-
-Linux：
-
-```bash
-./build/beamdrop config show --path config/beamdrop.json
-```
-
-`config init` 会创建父目录并写入默认配置；`config show` 会读取指定配置文件并输出规范化后的 JSON。
-
-### 发送单文件
-
-Windows：
-
-```bash
-build-mingw\beamdrop.exe send .\README.md --to 127.0.0.1:9090 --config config\beamdrop.example.json --chunk-size 65536 --log-file logs\beamdrop.log
-```
-
-Linux：
-
-```bash
-./build/beamdrop send ./README.md --to 127.0.0.1:9090 --config config/beamdrop.example.json --chunk-size 65536 --log-file logs/beamdrop.log
-```
-
-### 发送目录
-
-Windows：
-
-```bash
-build-mingw\beamdrop.exe send .\docs --to 127.0.0.1:9090
-```
-
-Linux：
-
-```bash
-./build/beamdrop send ./docs --to 127.0.0.1:9090
-```
-
-### 一次发送多个路径
-
-Windows：
-
-```bash
-build-mingw\beamdrop.exe send .\README.md .\docs --to 127.0.0.1:9090
-```
-
-Linux：
-
-```bash
-./build/beamdrop send ./README.md ./docs --to 127.0.0.1:9090
-```
-
-### 配置文件示例
-
-当前 `serve` / `send` 已支持通过 `--config` 读取配置文件。命令行显式参数会覆盖已加载配置；`send --chunk-size` 会覆盖 `transfer.chunk_size`。
-
-`serve` 会读取 `transfer.enable_resume` 和 `transfer.state_file`。开启续传后，接收端会根据状态文件和本地已存在文件计算可信 offset；发送端收到 `RESUME_ACK` 后从该 offset 继续发送。状态记录绑定 `relative_path + size + sha256`，传输完成且校验通过后会清理对应记录。
-
-当前传输会话以 `HELLO` packet 开始，payload 使用 `beamdrop-manifest-v1` 文本 manifest，包含文件数量和总字节数；随后每个文件统一使用 `FILE_INFO -> RESUME_ACK -> DATA -> FILE_END`，最后用 `FINISH` 结束。
-
-## GUI 控制面
-
-GUI 的运行链路为 `React → FastApiAdapter → REST/WebSocket → FastAPI → pybind11 → C++ app service`。REST `/api/snapshot` 是权威状态，WebSocket 仅推送低延迟增量事件。页面、feature 与 store 不直接调用 `fetch`、`WebSocket` 或 native API，因此未来可替换为 Tauri adapter。
-
-完整的 Windows/Linux 构建、启动、验证矩阵、已知限制和 5–7 分钟展示脚本见：[docs/GUI交付与演示指南.md](docs/GUI交付与演示指南.md)。
-
-### Windows 开发启动
-
-从仓库根目录执行：
-
-```powershell
-# 仅构建 pybind GUI 宿主模块；确保根目录 .venv 已按“Python 开发环境”安装依赖。
+# 构建 pybind 模块
 cmake --preset windows-mingw-python-debug
 cmake --build --preset windows-mingw-python-debug --parallel
 
-# 终端 A：FastAPI（脚本处理 MinGW DLL 与 .pyd 搜索路径）
-.\.venv\Scripts\python.exe backend\run_windows_dev.py
-
-# 终端 B：React 开发服务
+# 安装前端依赖
 npm --prefix frontend ci
+```
+
+打开两个终端：
+
+```powershell
+# 终端 A：后端
+.\.venv\Scripts\python.exe backend\run_windows_dev.py
+```
+
+```powershell
+# 终端 B：前端
 npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173
 ```
 
-浏览器访问 `http://127.0.0.1:5173`。GUI 首版使用**本机绝对路径输入**；浏览器不会上传文件副本到后端。
+浏览器访问 `http://127.0.0.1:5173`。
 
-### Linux 开发启动
+## Linux：构建并启动 GUI
 
-从仓库根目录执行：
+在仓库根目录执行：
 
 ```bash
-# C++ CLI/CTest
+# 首次初始化 Python 环境
+python3.12 -m venv .venv
+./.venv/bin/python -m pip install pybind11
+./.venv/bin/python -m pip install -e './backend[dev]'
+
+# 构建 C++ 与 pybind 模块
 cmake --preset linux-gcc-debug
 cmake --build --preset linux-gcc-debug --parallel
-
-# pybind 模块（该 preset 为 build/import 目的，关闭 CTest）
 cmake --preset native-bindings-debug
 cmake --build --preset native-bindings-debug --parallel
 
-# 终端 A：FastAPI
-cd backend
-export PYTHONPATH="$HOME/BeamDrop/build/native-bindings-debug/bindings/python${PYTHONPATH:+:$PYTHONPATH}"
-../.venv/bin/python -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000
-
-# 终端 B：React 开发服务
-cd frontend
-npm ci
-npm run dev -- --host 127.0.0.1 --port 5173
+# 安装前端依赖
+npm --prefix frontend ci
 ```
 
-如果仓库不在 `$HOME/BeamDrop`，把 `PYTHONPATH` 中的路径替换为实际仓库绝对路径。
-
-### GUI 质量门禁
+打开两个终端：
 
 ```bash
-# C++（按当前平台选择 preset）
-ctest --preset linux-gcc-debug --output-on-failure
+# 终端 A：后端
+export PYTHONPATH="$PWD/build/native-bindings-debug/bindings/python${PYTHONPATH:+:$PYTHONPATH}"
+./.venv/bin/python -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000
+```
 
-# Python backend
-./.venv/bin/python -m pytest backend/tests -q
+```bash
+# 终端 B：前端
+npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173
+```
 
-# React（Node 20.19+，推荐 Node 22）
+## GUI 演示步骤
+
+1. 在“接收服务”填写 `127.0.0.1`、`9090` 与保存目录，点击“启动接收”。
+2. 在“发送文件”填写待发送文件的**绝对路径**、目标 `127.0.0.1`、端口 `9090`，点击“发送文件”。
+3. 观察任务状态和进度变为 `completed`。
+4. 停止接收服务，确认最终状态为 `stopped`。
+
+Linux 测试文件与 SHA256 验证：
+
+```bash
+mkdir -p /tmp/beamdrop-e2e/source /tmp/beamdrop-e2e/received
+printf 'BeamDrop Linux E2E\n' > /tmp/beamdrop-e2e/source/small.txt
+: > /tmp/beamdrop-e2e/source/empty.bin
+printf '中文文件名内容\n' > /tmp/beamdrop-e2e/source/数据.txt
+
+sha256sum /tmp/beamdrop-e2e/source/small.txt /tmp/beamdrop-e2e/received/small.txt
+sha256sum /tmp/beamdrop-e2e/source/empty.bin /tmp/beamdrop-e2e/received/empty.bin
+sha256sum /tmp/beamdrop-e2e/source/数据.txt /tmp/beamdrop-e2e/received/数据.txt
+```
+
+## 测试命令
+
+```powershell
+ctest --preset windows-mingw-debug --output-on-failure
+.\.venv\Scripts\python.exe -m pytest backend\tests -q
 npm --prefix frontend test
 npm --prefix frontend run lint
 npm --prefix frontend run build
 ```
-
-示例配置位于：
-
-```text
-config/beamdrop.example.json
-```
-
-内容示例：
-
-```json
-{
-  "server": {
-    "host": "0.0.0.0",
-    "port": 9090,
-    "save_dir": "./received"
-  },
-  "transfer": {
-    "chunk_size": 1048576,
-    "enable_resume": true,
-    "verify_sha256": true,
-    "state_file": "./transfer_state.json"
-  },
-  "log": {
-    "level": "info",
-    "file": "./logs/beamdrop.log"
-  }
-}
-```
-
-## 设计文档
-
-核心设计文档位于 `docs/`。
-
-- [GUI 界面开发实施计划](docs/GUI界面开发实施计划.md)
-- [GUI 交付与演示指南](docs/GUI交付与演示指南.md)
-- [FastAPI / TypeScript DTO 对照](docs/FastAPI-TypeScript%20DTO对照.md)
