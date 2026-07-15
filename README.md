@@ -2,7 +2,7 @@
 
 BeamDrop（邻光）是一个面向局域网的轻量文件传输工具，聚焦在同一局域网内通过命令行完成可靠的文件投递。
 
-当前状态：C++ CLI 局域网文件传输 MVP 已完成。当前版本支持在局域网内通过命令行发送单文件、多文件和目录，并包含分块传输、断点续传、SHA256 校验、配置加载、基础进度输出和文件日志。
+当前状态：C++ CLI 局域网文件传输 MVP 与本机 GUI 控制面已完成。CLI 支持单文件、多文件和目录传输；GUI 通过 FastAPI、pybind11 调用同一 C++ app service，提供单文件发送、接收服务启停、任务快照和实时进度。
 
 ## 项目定位
 
@@ -27,6 +27,8 @@ BeamDrop 不以“复刻 AirDrop”为目标，而是提供一个清晰、可维
 - MinGW / GCC
 - 项目内 SHA256 实现
 - CTest
+- Python 3.12+ / FastAPI / pybind11（GUI 控制面）
+- React 19 / TypeScript / Vite（GUI 控制面，Node 20.19+，推荐 Node 22）
 
 ## Python 开发环境
 
@@ -254,6 +256,72 @@ Linux：
 
 当前传输会话以 `HELLO` packet 开始，payload 使用 `beamdrop-manifest-v1` 文本 manifest，包含文件数量和总字节数；随后每个文件统一使用 `FILE_INFO -> RESUME_ACK -> DATA -> FILE_END`，最后用 `FINISH` 结束。
 
+## GUI 控制面
+
+GUI 的运行链路为 `React → FastApiAdapter → REST/WebSocket → FastAPI → pybind11 → C++ app service`。REST `/api/snapshot` 是权威状态，WebSocket 仅推送低延迟增量事件。页面、feature 与 store 不直接调用 `fetch`、`WebSocket` 或 native API，因此未来可替换为 Tauri adapter。
+
+完整的 Windows/Linux 构建、启动、验证矩阵、已知限制和 5–7 分钟展示脚本见：[docs/GUI交付与演示指南.md](docs/GUI交付与演示指南.md)。
+
+### Windows 开发启动
+
+从仓库根目录执行：
+
+```powershell
+# 仅构建 pybind GUI 宿主模块；确保根目录 .venv 已按“Python 开发环境”安装依赖。
+cmake --preset windows-mingw-python-debug
+cmake --build --preset windows-mingw-python-debug --parallel
+
+# 终端 A：FastAPI（脚本处理 MinGW DLL 与 .pyd 搜索路径）
+.\.venv\Scripts\python.exe backend\run_windows_dev.py
+
+# 终端 B：React 开发服务
+npm --prefix frontend ci
+npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173
+```
+
+浏览器访问 `http://127.0.0.1:5173`。GUI 首版使用**本机绝对路径输入**；浏览器不会上传文件副本到后端。
+
+### Linux 开发启动
+
+从仓库根目录执行：
+
+```bash
+# C++ CLI/CTest
+cmake --preset linux-gcc-debug
+cmake --build --preset linux-gcc-debug --parallel
+
+# pybind 模块（该 preset 为 build/import 目的，关闭 CTest）
+cmake --preset native-bindings-debug
+cmake --build --preset native-bindings-debug --parallel
+
+# 终端 A：FastAPI
+cd backend
+export PYTHONPATH="$HOME/BeamDrop/build/native-bindings-debug/bindings/python${PYTHONPATH:+:$PYTHONPATH}"
+../.venv/bin/python -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000
+
+# 终端 B：React 开发服务
+cd frontend
+npm ci
+npm run dev -- --host 127.0.0.1 --port 5173
+```
+
+如果仓库不在 `$HOME/BeamDrop`，把 `PYTHONPATH` 中的路径替换为实际仓库绝对路径。
+
+### GUI 质量门禁
+
+```bash
+# C++（按当前平台选择 preset）
+ctest --preset linux-gcc-debug --output-on-failure
+
+# Python backend
+./.venv/bin/python -m pytest backend/tests -q
+
+# React（Node 20.19+，推荐 Node 22）
+npm --prefix frontend test
+npm --prefix frontend run lint
+npm --prefix frontend run build
+```
+
 示例配置位于：
 
 ```text
@@ -285,3 +353,7 @@ config/beamdrop.example.json
 ## 设计文档
 
 核心设计文档位于 `docs/`。
+
+- [GUI 界面开发实施计划](docs/GUI界面开发实施计划.md)
+- [GUI 交付与演示指南](docs/GUI交付与演示指南.md)
+- [FastAPI / TypeScript DTO 对照](docs/FastAPI-TypeScript%20DTO对照.md)
