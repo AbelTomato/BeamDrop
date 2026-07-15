@@ -5,7 +5,7 @@
 
 export const EVENT_SCHEMA_VERSION = 1 as const;
 
-export type TaskState = "pending" | "running" | "completed" | "failed";
+export type TaskState = "pending" | "running" | "canceling" | "canceled" | "completed" | "failed";
 export type ReceiverState =
   | "stopped"
   | "starting"
@@ -52,8 +52,8 @@ export interface TransferProgress {
   relativePath: string;
   currentFileBytes: number;
   currentFileTotalBytes: number;
-  totalBytes: number;
-  transferredBytes: number;
+  totalBytes: number | null;
+  transferredBytes: number | null;
 }
 
 export interface TaskSnapshot {
@@ -119,6 +119,12 @@ export interface TaskFailedEvent extends EventEnvelopeBase {
   payload: TaskSnapshot;
 }
 
+export interface TaskCanceledEvent extends EventEnvelopeBase {
+  type: "task.canceled" | "task.canceling";
+  taskId: string;
+  payload: TaskSnapshot;
+}
+
 export interface ReceiverStartedEvent extends EventEnvelopeBase {
   type: "receiver.started";
   payload: ReceiverSnapshot;
@@ -145,6 +151,7 @@ export type KnownBeamDropEvent =
   | TransferProgressEvent
   | TaskCompletedEvent
   | TaskFailedEvent
+  | TaskCanceledEvent
   | ReceiverStartedEvent
   | ReceiverStoppedEvent
   | ErrorEvent
@@ -164,6 +171,8 @@ const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set([
   "transfer.progress",
   "task.completed",
   "task.failed",
+  "task.canceling",
+  "task.canceled",
   "receiver.started",
   "receiver.stopped",
   "error",
@@ -173,9 +182,13 @@ const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set([
 export interface BeamDropApi {
   getSnapshot(): Promise<AppSnapshot>;
   send(request: SendRequest): Promise<TaskCreated>;
+  cancel(taskId: string): Promise<TaskSnapshot>;
   startReceiver(request: StartReceiverRequest): Promise<ReceiverSnapshot>;
   stopReceiver(): Promise<ReceiverSnapshot>;
-  subscribe(listener: (event: BeamDropEvent) => void): () => void;
+  subscribe(
+    listener: (event: BeamDropEvent) => void,
+    onSnapshot?: (snapshot: AppSnapshot) => void,
+  ): () => void;
 }
 
 export function isKnownBeamDropEvent(

@@ -6,6 +6,7 @@ import type {
   SendRequest,
   StartReceiverRequest,
   TaskCreated,
+  TaskSnapshot,
 } from '../BeamDropApi'
 
 export class MockBeamDropApi implements BeamDropApi {
@@ -22,6 +23,14 @@ export class MockBeamDropApi implements BeamDropApi {
     return { taskId: 'mock-task', createdAt: this.snapshot.snapshotAt }
   }
 
+  public async cancel(taskId: string): Promise<TaskSnapshot> {
+    const task = this.snapshot.tasks.find((item) => item.taskId === taskId)
+    if (!task) throw new Error(`unknown mock task '${taskId}'`)
+    const canceled: TaskSnapshot = { ...task, state: 'canceled', finishedAt: new Date().toISOString(), error: null }
+    this.snapshot = { ...this.snapshot, tasks: this.snapshot.tasks.map((item) => item.taskId === taskId ? canceled : item) }
+    return canceled
+  }
+
   public async startReceiver(request: StartReceiverRequest): Promise<ReceiverSnapshot> {
     const receiver: ReceiverSnapshot = {
       state: 'running', host: request.host, port: request.port, saveDir: request.saveDir, lastError: null,
@@ -36,8 +45,12 @@ export class MockBeamDropApi implements BeamDropApi {
     return receiver
   }
 
-  public subscribe(listener: (event: BeamDropEvent) => void): () => void {
+  public subscribe(
+    listener: (event: BeamDropEvent) => void,
+    onSnapshot?: (snapshot: AppSnapshot) => void,
+  ): () => void {
     this.listeners.add(listener)
+    onSnapshot?.(this.snapshot)
     return () => this.listeners.delete(listener)
   }
 
