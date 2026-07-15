@@ -1,6 +1,6 @@
 # FastAPI / TypeScript DTO 对照（Slice 3）
 
-状态：前端领域契约已冻结为 v1；`backend/` 尚未创建，以下 FastAPI/Pydantic DTO 为 Slice 4–5 的实现约束，不表示后端已经完成。
+状态：前端领域契约已冻结为 v1；Slice 5 已实现 Pydantic REST DTO 与 snake_case JSON wire format。WebSocket envelope 的实际传输和 adapter 解析仍未实现。
 
 命名规则：JSON DTO 使用 `snake_case`，前端领域模型使用 `camelCase`。`FastApiAdapter` 在 Slice 7 负责命名转换、结构校验和错误归一化；React 功能层不得感知 JSON wire format。
 
@@ -55,6 +55,6 @@
 
 ## 后端落地要求
 
-- Slice 4/5 创建 Pydantic DTO 时必须按此表字段、可空性和枚举实现，并新增后端 DTO 测试。
+- Slice 5 已按此表实现 Pydantic DTO 与 REST route 测试；`StartReceiverRequest.state_file` 是后端从 `save_dir` 派生的内部字段，不出现在 wire DTO。
 - Slice 7 在实际实现 REST/WS 前必须补充 wire DTO 到本领域模型的运行时解析测试。
 - REST 快照是权威状态；WebSocket 只能提供增量事件，不能作为恢复状态的唯一来源。
