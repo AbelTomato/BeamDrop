@@ -651,7 +651,24 @@ pybind 回调不得直接操作 asyncio 对象；通过线程安全队列或 `lo
 
 FastAPI 不会被废弃，而是保留为 Web / Agent 控制宿主；Tauri 是正式桌面宿主。两者共享领域契约和 React 功能层，但不强行共享底层运行时。
 
-## 实施状态（2026-07-14）
+## 实施状态（2026-07-15）
+
+### Slice 4：FastAPI NativeGateway 与任务状态机 — 已完成
+
+已完成：
+
+- 新增 backend 内存领域 DTO：`StartReceiverRequest`、`ReceiverSnapshot`。
+- 实现 `NativeGateway` 发送与接收服务契约，提供 `PybindNativeGateway` 与可测试的 `FakeNativeGateway`。
+- `TaskManager` 支持 `pending -> running -> completed/failed`，使用锁保护任务快照；长任务经 `asyncio.to_thread()` 执行，进度和终态互不覆盖。
+- `ReceiverManager` 管理单一接收服务快照，并串行化 start/stop；重复启动返回确定错误，不会创建第二个监听实例；停止已停止服务为幂等操作。
+- backend pytest 覆盖发送任务成功、native 失败、未知异常、进度、重复执行、接收服务生命周期与并发 start/stop；共 15/15 通过。
+- Windows MinGW 下构建 `beamdrop_native` 成功；真实 `PybindNativeGateway` receiver smoke 验证 `running -> stopping`，符合 C++ 异步 stop 语义。
+
+后续切片：
+
+- 尚未实现 FastAPI 应用、Pydantic DTO、REST 快照和 WebSocket，分别属于 Slice 5–7。
+- Slice 5 的 API route 必须在 worker thread 调用可能阻塞的 `ReceiverManager.start/stop`，不能直接阻塞 asyncio event loop。
+- Windows MinGW 的 `.pyd` 手工运行时需通过 `os.add_dll_directory()` 指定 MinGW runtime DLL 目录；正式启动脚本应处理该开发环境依赖。
 
 ### Slice 3：跨宿主领域契约与前端端口 — 已完成
 

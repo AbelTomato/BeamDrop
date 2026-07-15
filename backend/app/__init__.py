@@ -1,0 +1,1 @@
+"""BeamDrop backend application package."""
