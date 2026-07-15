@@ -1,15 +1,16 @@
-"""Slice 5 REST application factory; WebSocket support is deferred to Slice 6."""
+"""FastAPI REST and WebSocket control-plane application factory."""
 
 from __future__ import annotations
 
 import asyncio
 
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.native_gateway import NativeGateway, PybindNativeGateway
+from app.core.event_bus import EventBus
 from app.core.receiver_manager import ReceiverAlreadyRunningError, ReceiverManager
 from app.core.task_manager import TaskManager
 from app.schemas.wire import (
@@ -24,15 +25,17 @@ from app.schemas.wire import (
 )
 
 
-def create_app(gateway: NativeGateway | None = None) -> FastAPI:
+def create_app(gateway: NativeGateway | None = None, *, heartbeat_seconds: float = 15.0) -> FastAPI:
     """Create an injectable control-plane app without exposing pybind to routes."""
 
     native_gateway = gateway or PybindNativeGateway()
-    task_manager = TaskManager(native_gateway)
-    receiver_manager = ReceiverManager(native_gateway)
+    event_bus = EventBus()
+    task_manager = TaskManager(native_gateway, event_bus)
+    receiver_manager = ReceiverManager(native_gateway, event_bus)
     app = FastAPI(title="BeamDrop Control Plane", version="0.1.0")
     app.state.task_manager = task_manager
     app.state.receiver_manager = receiver_manager
+    app.state.event_bus = event_bus
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
@@ -81,6 +84,13 @@ def create_app(gateway: NativeGateway | None = None) -> FastAPI:
         asyncio.create_task(manager.run(created.task_id))
         return TaskCreatedDto.from_domain(created)
 
+    @app.post("/api/tasks/{task_id}/cancel", response_model=TaskSnapshotDto)
+    async def cancel_task(task_id: str, request: Request) -> TaskSnapshotDto:
+        task_value = request.app.state.task_manager.cancel(task_id)
+        if task_value is None:
+            raise _error_response(status.HTTP_404_NOT_FOUND, "TASK_NOT_FOUND", f"task '{task_id}' does not exist")
+        return TaskSnapshotDto.from_domain(task_value)
+
     @app.post("/api/receiver/start", response_model=ReceiverSnapshotDto)
     async def start_receiver(payload: StartReceiverRequestDto, request: Request) -> ReceiverSnapshotDto:
         manager: ReceiverManager = request.app.state.receiver_manager
@@ -101,6 +111,25 @@ def create_app(gateway: NativeGateway | None = None) -> FastAPI:
         if task_value is None:
             raise _error_response(status.HTTP_404_NOT_FOUND, "TASK_NOT_FOUND", f"task '{task_id}' does not exist")
         return TaskSnapshotDto.from_domain(task_value)
+
+    @app.websocket("/ws/events")
+    async def events(websocket: WebSocket) -> None:
+        await websocket.accept()
+        bus: EventBus = websocket.app.state.event_bus
+        subscription = await bus.subscribe()
+        try:
+            while True:
+                try:
+                    event = await asyncio.wait_for(subscription.receive(), timeout=heartbeat_seconds)
+                except TimeoutError:
+                    event = bus.heartbeat()
+                await websocket.send_json(event)
+        except (WebSocketDisconnect, OSError, RuntimeError):
+            # Browser development StrictMode may close a just-created socket.
+            # A failed send is a normal disconnect, not a server error.
+            pass
+        finally:
+            bus.unsubscribe(subscription)
 
     return app
 

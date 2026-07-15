@@ -56,6 +56,37 @@ def test_stop_transitions_to_stopped_and_is_idempotent() -> None:
     assert gateway.receiver_stop_calls == 1
 
 
+def test_stop_waits_for_native_stopping_state_to_settle_before_publishing_stopped() -> None:
+    class AsyncStopGateway(FakeNativeGateway):
+        def __init__(self) -> None:
+            super().__init__()
+            self.status_calls = 0
+
+        def stop_receiver(self):
+            self.receiver_stop_calls += 1
+            self.receiver_snapshot = self.receiver_snapshot.__class__(
+                state=ReceiverState.STOPPING, request=self.receiver_snapshot.request, error=None
+            )
+            return self.receiver_snapshot
+
+        def receiver_status(self):
+            self.status_calls += 1
+            if self.status_calls == 2:
+                self.receiver_snapshot = self.receiver_snapshot.__class__(
+                    state=ReceiverState.STOPPED, request=None, error=None
+                )
+            return self.receiver_snapshot
+
+    gateway = AsyncStopGateway()
+    manager = ReceiverManager(gateway)
+    manager.start(receiver_request())
+
+    stopped = manager.stop()
+
+    assert stopped.state is ReceiverState.STOPPED
+    assert gateway.status_calls == 2
+
+
 def test_start_native_error_becomes_failed_snapshot() -> None:
     error = ErrorPayload(code="ADDRESS_IN_USE", message="port is occupied")
     gateway = FakeNativeGateway()

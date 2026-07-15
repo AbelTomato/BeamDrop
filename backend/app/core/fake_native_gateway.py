@@ -39,13 +39,15 @@ class FakeNativeGateway:
         self.receiver_start_block_until: Event | None = None
         self.on_receiver_start: Callable[[], None] | None = None
 
-    def send(self, request: SendRequest, on_progress: ProgressCallback) -> NativeSendResult:
+    def send(self, request: SendRequest, on_progress: ProgressCallback, cancel_event: Event | None = None) -> NativeSendResult:
         self.calls.append(request)
         self._progress_callbacks.append(on_progress)
         if self.on_send_started is not None:
             self.on_send_started()
         if self.block_until is not None:
-            self.block_until.wait(timeout=5)
+            while not self.block_until.wait(timeout=0.02):
+                if cancel_event is not None and cancel_event.is_set():
+                    raise NativeGatewayError(ErrorPayload(code="CANCELLED", message="send cancelled"))
         if self.error is not None:
             raise NativeGatewayError(self.error)
         return self.result
