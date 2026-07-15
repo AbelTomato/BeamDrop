@@ -37,6 +37,7 @@ PacketType parse_type(std::uint16_t value) {
     case PacketType::Finish:
     case PacketType::Error:
     case PacketType::Heartbeat:
+    case PacketType::DirectoryInfo:
         return static_cast<PacketType>(value);
     }
 

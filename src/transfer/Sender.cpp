@@ -4,6 +4,7 @@
 #include "beamdrop/protocol/PacketIO.hpp"
 #include "beamdrop/protocol/PacketType.hpp"
 #include "beamdrop/transfer/FileInfoCodec.hpp"
+#include "beamdrop/transfer/DirectoryInfoCodec.hpp"
 #include "beamdrop/transfer/Progress.hpp"
 #include "beamdrop/transfer/ResumeAckCodec.hpp"
 #include "beamdrop/transfer/TransferError.hpp"
@@ -115,10 +116,24 @@ void Sender::send_one_file(const std::filesystem::path &source_path, const std::
     }
 }
 
-void Sender::send_task(const std::vector<filesystem::FileEntry> &entries) const {
+void Sender::send_one_directory(const std::string &relative_path) const {
+    protocol::Packet info_packet;
+    info_packet.header.type = protocol::PacketType::DirectoryInfo;
+    info_packet.payload = DirectoryInfoCodec::encode(relative_path);
+    protocol::write_packet(connection_, info_packet);
+}
+
+void Sender::send_task(const std::vector<filesystem::FileEntry> &entries,
+                       const std::vector<filesystem::DirectoryEntry> &directories) const {
     if (progress_callback_) {
         progress_callback_(ProgressEvent{ProgressDirection::Send, "", 0, 0, 0, entries.size(),
                                          Stage::TaskStarted});
+    }
+    for (const auto &directory : directories) {
+        if (stop_token_.stop_requested()) {
+            throw TransferError{ErrorCode::Cancelled, "send cancelled"};
+        }
+        send_one_directory(directory.relative_path);
     }
     for (std::size_t index = 0; index < entries.size(); ++index) {
         if (stop_token_.stop_requested()) {
@@ -134,7 +149,7 @@ void Sender::send_task(const std::vector<filesystem::FileEntry> &entries) const 
 }
 
 void Sender::send_path(const std::filesystem::path &input_path) const {
-    send_task(filesystem::scan_files(input_path));
+    send_task(filesystem::scan_files(input_path), filesystem::scan_directories(input_path));
 }
 
 } // namespace beamdrop::transfer

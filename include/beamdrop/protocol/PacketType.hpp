@@ -14,6 +14,7 @@ enum class PacketType : std::uint16_t {
     Finish = 7,
     Error = 8,
     Heartbeat = 9,
+    DirectoryInfo = 10,
 };
 
 } // namespace beamdrop::protocol

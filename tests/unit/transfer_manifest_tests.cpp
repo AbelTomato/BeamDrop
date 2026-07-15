@@ -29,20 +29,23 @@ bool decode_fails(const std::string& text) {
 
 int main() {
     try {
-        const beamdrop::transfer::TransferManifest manifest{3, 42};
+        const beamdrop::transfer::TransferManifest manifest{3, 42, 4};
         const auto payload = beamdrop::transfer::TransferManifestCodec::encode(manifest);
         const auto decoded = beamdrop::transfer::TransferManifestCodec::decode(payload);
 
         require(decoded.file_count == 3, "file_count should round-trip");
         require(decoded.total_bytes == 42, "total_bytes should round-trip");
+        require(decoded.directory_count == 4, "directory_count should round-trip");
 
         require(decode_fails("3"), "plain text file count must be rejected");
-        require(decode_fails("beamdrop-manifest-v2\nfile_count=1\ntotal_bytes=2\n"),
-                "unknown manifest version must be rejected");
-        require(decode_fails("beamdrop-manifest-v1\nfile_count=1abc\ntotal_bytes=2\n"),
+        require(decode_fails("beamdrop-manifest-v1\nfile_count=1\ntotal_bytes=2\ndirectory_count=0\n"),
+                "legacy manifest version must be rejected");
+        require(decode_fails("beamdrop-manifest-v2\nfile_count=1abc\ntotal_bytes=2\ndirectory_count=0\n"),
                 "invalid file_count must be rejected");
-        require(decode_fails("beamdrop-manifest-v1\nfile_count=1\ntotal_bytes=2abc\n"),
+        require(decode_fails("beamdrop-manifest-v2\nfile_count=1\ntotal_bytes=2abc\ndirectory_count=0\n"),
                 "invalid total_bytes must be rejected");
+        require(decode_fails("beamdrop-manifest-v2\nfile_count=1\ntotal_bytes=2\ndirectory_count=bad\n"),
+                "invalid directory_count must be rejected");
 
         return EXIT_SUCCESS;
     } catch (const std::exception& error) {

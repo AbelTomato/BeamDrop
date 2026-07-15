@@ -16,12 +16,14 @@ public:
                       std::filesystem::path state_file = "transfer_state.json");
 
     void receive_file(const std::filesystem::path& save_dir) const;
-    void receive_task(const std::filesystem::path& save_dir, std::size_t file_count) const;
+    void receive_task(const std::filesystem::path& save_dir, std::size_t file_count,
+                      std::size_t directory_count = 0) const;
 
 private:
     void receive_one_file(const std::filesystem::path& save_dir,
                           std::size_t file_index,
                           std::size_t file_count) const;
+    void receive_one_directory(const std::filesystem::path& save_dir) const;
 
     const network::TcpConnection& connection_;
     ProgressCallback progress_callback_;

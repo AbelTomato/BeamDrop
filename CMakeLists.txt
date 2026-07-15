@@ -37,6 +37,7 @@ set(BEAMDROP_CORE_SOURCES
     src/protocol/PacketParser.cpp
     src/protocol/Serializer.cpp
     src/transfer/FileInfoCodec.cpp
+    src/transfer/DirectoryInfoCodec.cpp
     src/transfer/Receiver.cpp
     src/transfer/ResumeAckCodec.cpp
     src/transfer/ResumeManager.cpp

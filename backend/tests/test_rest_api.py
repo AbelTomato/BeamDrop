@@ -67,15 +67,17 @@ def test_send_validation_returns_stable_error_body() -> None:
     assert response.json()["error"]["details"]["issues"]
 
 
-def test_send_rejects_directory_source_path_without_leaking_pydantic_error() -> None:
+def test_send_accepts_directory_source_path() -> None:
     client = client_for()
     payload = send_payload()
     payload["source_path"] = "."
 
-    response = client.post("/api/transfers/send", json=payload)
+    created = client.post("/api/transfers/send", json=payload)
 
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert created.status_code == 202
+    task = _wait_for_task(client, created.json()["task_id"])
+    assert task["state"] == "completed"
+    assert task["request"] == payload
 
 
 def test_cors_only_allows_configured_vite_origins() -> None:

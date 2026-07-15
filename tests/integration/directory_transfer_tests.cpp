@@ -46,10 +46,12 @@ int main() {
     const auto source_a = send_dir / "a.txt";
     const auto source_b = send_dir / "nested" / "b.txt";
     const auto source_c = send_dir / "nested" / "deep" / "c.bin";
+    const auto empty_dir = send_dir / "empty";
 
-    const auto received_a = receive_dir / "a.txt";
-    const auto received_b = receive_dir / "nested" / "b.txt";
-    const auto received_c = receive_dir / "nested" / "deep" / "c.bin";
+    const auto received_a = receive_dir / "send" / "a.txt";
+    const auto received_b = receive_dir / "send" / "nested" / "b.txt";
+    const auto received_c = receive_dir / "send" / "nested" / "deep" / "c.bin";
+    const auto received_empty_dir = receive_dir / "send" / "empty";
 
     const std::vector<std::uint8_t> content_a = {'a', '\n'};
     const std::vector<std::uint8_t> content_b = {'B', 'e', 'a', 'm', 'D', 'r', 'o', 'p'};
@@ -59,8 +61,10 @@ int main() {
     beamdrop::filesystem::write_file(source_a, content_a);
     beamdrop::filesystem::write_file(source_b, content_b);
     beamdrop::filesystem::write_file(source_c, content_c);
+    std::filesystem::create_directories(empty_dir);
 
     const auto entries = beamdrop::filesystem::scan_files(send_dir);
+    const auto directories = beamdrop::filesystem::scan_directories(send_dir);
     assert(entries.size() == 3);
     std::uint64_t total_bytes = 0;
     for (const auto &entry : entries) {
@@ -80,6 +84,7 @@ int main() {
             assert(hello.header.type == PacketType::Hello);
             received_manifest = TransferManifestCodec::decode(hello.payload);
             assert(received_manifest.file_count == entries.size());
+            assert(received_manifest.directory_count == directories.size());
             assert(received_manifest.total_bytes == total_bytes);
 
             Receiver receiver{connection,
@@ -93,7 +98,8 @@ int main() {
                               },
                               true, state_file};
             receiver.receive_task(receive_dir,
-                                  static_cast<std::size_t>(received_manifest.file_count));
+                                  static_cast<std::size_t>(received_manifest.file_count),
+                                  static_cast<std::size_t>(received_manifest.directory_count));
         } catch (...) {
             server_error = std::current_exception();
         }
@@ -106,7 +112,8 @@ int main() {
     Packet hello;
     hello.header.type = PacketType::Hello;
     hello.payload = TransferManifestCodec::encode(
-        TransferManifest{static_cast<std::uint64_t>(entries.size()), total_bytes});
+        TransferManifest{static_cast<std::uint64_t>(entries.size()), total_bytes,
+                         static_cast<std::uint64_t>(directories.size())});
     beamdrop::protocol::write_packet(connection, hello);
 
     std::vector<ProgressEvent> send_file_completed;
@@ -121,7 +128,7 @@ int main() {
                       }
                   },
                   4};
-    sender.send_task(entries);
+    sender.send_task(entries, directories);
 
     server_thread.join();
 
@@ -132,6 +139,7 @@ int main() {
     assert(beamdrop::filesystem::read_file(received_a) == content_a);
     assert(beamdrop::filesystem::read_file(received_b) == content_b);
     assert(beamdrop::filesystem::read_file(received_c) == content_c);
+    assert(std::filesystem::is_directory(received_empty_dir));
 
     assert(send_file_completed.size() == entries.size());
     assert(receive_file_completed.size() == entries.size());

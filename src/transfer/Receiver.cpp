@@ -3,6 +3,7 @@
 #include "beamdrop/protocol/PacketIO.hpp"
 #include "beamdrop/protocol/PacketType.hpp"
 #include "beamdrop/transfer/FileInfoCodec.hpp"
+#include "beamdrop/transfer/DirectoryInfoCodec.hpp"
 #include "beamdrop/transfer/Progress.hpp"
 #include "beamdrop/transfer/ResumeAckCodec.hpp"
 #include "beamdrop/transfer/ResumeManager.hpp"
@@ -30,6 +31,15 @@ std::filesystem::path safe_join(const std::filesystem::path &save_dir,
     }
 
     return save_dir / path;
+}
+
+std::filesystem::path safe_directory_path(const std::filesystem::path &save_dir,
+                                          const std::string &relative_path) {
+    const auto path = safe_join(save_dir, relative_path);
+    if (path.filename().empty()) {
+        throw TransferError{ErrorCode::UnsafePath, "directory path must name a directory"};
+    }
+    return path;
 }
 
 std::uint64_t existing_file_size(const std::filesystem::path &path) {
@@ -71,6 +81,10 @@ void Receiver::receive_one_file(const std::filesystem::path &save_dir, std::size
 
     const auto file_info = FileInfoCodec::decode(info_packet.payload);
     const auto output_path = safe_join(save_dir, file_info.relative_path);
+    if (std::filesystem::exists(output_path) && !enable_resume_) {
+        throw TransferError{ErrorCode::FileWriteFailed,
+                            "receive target already exists: " + output_path.string()};
+    }
     const auto parent = output_path.parent_path();
     if (!parent.empty()) {
         std::filesystem::create_directories(parent);
@@ -159,10 +173,28 @@ void Receiver::receive_one_file(const std::filesystem::path &save_dir, std::size
     }
 }
 
-void Receiver::receive_task(const std::filesystem::path &save_dir, std::size_t file_count) const {
+void Receiver::receive_one_directory(const std::filesystem::path &save_dir) const {
+    const auto info_packet = protocol::read_packet(connection_);
+    if (info_packet.header.type != protocol::PacketType::DirectoryInfo) {
+        throw TransferError{ErrorCode::UnexpectedPacket, "expected DIRECTORY_INFO packet"};
+    }
+
+    const auto output_path = safe_directory_path(save_dir, DirectoryInfoCodec::decode(info_packet.payload));
+    if (std::filesystem::exists(output_path)) {
+        throw TransferError{ErrorCode::FileWriteFailed,
+                            "receive target already exists: " + output_path.string()};
+    }
+    std::filesystem::create_directories(output_path);
+}
+
+void Receiver::receive_task(const std::filesystem::path &save_dir, std::size_t file_count,
+                            std::size_t directory_count) const {
     if (progress_callback_) {
         progress_callback_(ProgressEvent{ProgressDirection::Receive, "", 0, 0, 0, file_count,
                                          Stage::TaskStarted});
+    }
+    for (std::size_t index = 0; index < directory_count; ++index) {
+        receive_one_directory(save_dir);
     }
     for (std::size_t index = 0; index < file_count; ++index) {
         receive_one_file(save_dir, index + 1, file_count);

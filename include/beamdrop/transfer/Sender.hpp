@@ -20,7 +20,8 @@ public:
                     std::stop_token stop_token = {});
 
     void send_file(const std::filesystem::path& source_path, const std::string& relative_path) const;
-    void send_task(const std::vector<filesystem::FileEntry>& entries) const;
+    void send_task(const std::vector<filesystem::FileEntry>& entries,
+                   const std::vector<filesystem::DirectoryEntry>& directories = {}) const;
     void send_path(const std::filesystem::path& input_path) const;
 
 private:
@@ -28,6 +29,7 @@ private:
                        const std::string& relative_path,
                        std::size_t file_index,
                        std::size_t file_count) const;
+    void send_one_directory(const std::string& relative_path) const;
 
     const network::TcpConnection& connection_;
     ProgressCallback progress_callback_;

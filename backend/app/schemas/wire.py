@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.contracts import (
     ErrorPayload,
@@ -33,13 +32,6 @@ class SendRequestDto(BaseModel):
     target_port: int = Field(ge=1, le=65535)
     chunk_size: int | None = Field(default=None, gt=0)
 
-    @field_validator("source_path")
-    @classmethod
-    def source_path_must_not_be_directory(cls, value: str) -> str:
-        if Path(value).is_dir():
-            raise ValueError("source_path must identify a file, not a directory")
-        return value
-
     def to_domain(self) -> SendRequest:
         return SendRequest(**self.model_dump())
 
@@ -52,6 +44,8 @@ class StartReceiverRequestDto(BaseModel):
     save_dir: NonEmptyString
 
     def to_domain(self) -> StartReceiverRequest:
+        from pathlib import Path
+
         save_dir = Path(self.save_dir)
         return StartReceiverRequest(
             host=self.host,

@@ -72,7 +72,7 @@ ReceiveService::receive(const beamdrop::network::TcpConnection &connection,
 
         beamdrop::transfer::Receiver receiver{connection, progress_callback, request.enable_resume,
                                               request.state_file};
-        receiver.receive_task(request.save_dir, file_count);
+        receiver.receive_task(request.save_dir, file_count, manifest.directory_count);
 
         if (auto error = check_cancelled(stop_token)) {
             return ServiceResult<ReceiveResult>::failure(std::move(*error));

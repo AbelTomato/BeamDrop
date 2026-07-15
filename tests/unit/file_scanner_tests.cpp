@@ -18,6 +18,7 @@ int main() {
 
     beamdrop::filesystem::write_file(file_a, std::vector<std::uint8_t>{'a'});
     beamdrop::filesystem::write_file(file_b, std::vector<std::uint8_t>{'b', 'b'});
+    std::filesystem::create_directories(root_dir / "empty");
 
     const auto single_entries = beamdrop::filesystem::scan_files(file_a);
     assert(single_entries.size() == 1);
@@ -28,11 +29,17 @@ int main() {
     const auto directory_entries = beamdrop::filesystem::scan_files(root_dir);
     assert(directory_entries.size() == 2);
     assert(directory_entries[0].source_path == file_a);
-    assert(directory_entries[0].relative_path == "a.txt");
+    assert(directory_entries[0].relative_path == "root/a.txt");
     assert(directory_entries[0].size == 1);
     assert(directory_entries[1].source_path == file_b);
-    assert(directory_entries[1].relative_path == "nested/b.txt");
+    assert(directory_entries[1].relative_path == "root/nested/b.txt");
     assert(directory_entries[1].size == 2);
+
+    const auto directory_paths = beamdrop::filesystem::scan_directories(root_dir);
+    assert(directory_paths.size() == 3);
+    assert(directory_paths[0].relative_path == "root");
+    assert(directory_paths[1].relative_path == "root/empty");
+    assert(directory_paths[2].relative_path == "root/nested");
 
     std::filesystem::remove_all(base_dir);
 

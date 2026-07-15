@@ -8,6 +8,7 @@ namespace beamdrop::transfer {
 struct TransferManifest {
     std::uint64_t file_count = 0;
     std::uint64_t total_bytes = 0;
+    std::uint64_t directory_count = 0;
 };
 
 class TransferManifestCodec {
