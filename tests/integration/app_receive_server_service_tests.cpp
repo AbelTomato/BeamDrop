@@ -1,6 +1,7 @@
 #include "beamdrop/app/ReceiveServerService.hpp"
 #include "beamdrop/app/ReceiveService.hpp"
 #include "beamdrop/app/TransferTask.hpp"
+#include "beamdrop/network/TcpClient.hpp"
 #include <cassert>
 #include <chrono>
 #include <functional>
@@ -69,6 +70,22 @@ int main() {
     result = receive_server.stop();
     assert(!result);
     assert(result.error().code == beamdrop::app::ErrorCode::NotRunning);
+
+    // A connected sender that has not sent HELLO blocks the receiver in a socket
+    // read. stop() must interrupt that read rather than remain Stopping until the
+    // peer disconnects.
+    result = receive_server.start(request);
+    assert(result);
+    beamdrop::network::TcpClient client;
+    auto pending_connection = client.connect(request.host, request.port);
+    std::this_thread::sleep_for(std::chrono::milliseconds{100});
+    result = receive_server.stop();
+    assert(result);
+    assert(wait_until(
+        [&receive_server] {
+            return receive_server.status().state == beamdrop::app::ReceiveServerState::Stopped;
+        },
+        std::chrono::seconds{2}));
 
     result = receive_server.start(request);
     assert(result);

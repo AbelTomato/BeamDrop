@@ -12,34 +12,48 @@ TcpConnection::~TcpConnection() {
     close();
 }
 
-TcpConnection::TcpConnection(TcpConnection &&other) noexcept : handle_(other.handle_) {
-    other.handle_ = -1;
+TcpConnection::TcpConnection(TcpConnection &&other) noexcept
+    : handle_(other.handle_.exchange(-1)) {
 }
 
 TcpConnection &TcpConnection::operator=(TcpConnection &&other) noexcept {
     if (this != &other) {
         close();
-        handle_ = other.handle_;
-        other.handle_ = -1;
+        handle_ = other.handle_.exchange(-1);
     }
     return *this;
 }
 
 bool TcpConnection::valid() const noexcept {
-    return handle_ != -1;
+    return handle_.load() != -1;
 }
 
-void TcpConnection::close() noexcept {
-    if (!valid()) {
+void TcpConnection::shutdown() noexcept {
+    const auto handle = handle_.exchange(-1);
+    if (handle == -1) {
         return;
     }
 
-    detail::close_socket(detail::to_socket_handle(handle_));
-    handle_ = -1;
+#ifdef _WIN32
+    ::shutdown(detail::to_socket_handle(handle), SD_BOTH);
+#else
+    ::shutdown(detail::to_socket_handle(handle), SHUT_RDWR);
+#endif
+    detail::close_socket(detail::to_socket_handle(handle));
+}
+
+void TcpConnection::close() noexcept {
+    const auto handle = handle_.exchange(-1);
+    if (handle == -1) {
+        return;
+    }
+
+    detail::close_socket(detail::to_socket_handle(handle));
 }
 
 void TcpConnection::write_all(std::span<const std::uint8_t> bytes) const {
-    if (!valid()) {
+    const auto handle = handle_.load();
+    if (handle == -1) {
         throw NetworkError{ErrorCode::ConnectFailed, "cannot write to invalid TCP connection"};
     }
 
@@ -49,7 +63,7 @@ void TcpConnection::write_all(std::span<const std::uint8_t> bytes) const {
         const int chunk_size =
             remaining > static_cast<std::size_t>(INT_MAX) ? INT_MAX : static_cast<int>(remaining);
         const int sent =
-            send(detail::to_socket_handle(handle_),
+            send(detail::to_socket_handle(handle),
                  reinterpret_cast<const char *>(bytes.data() + sent_total), chunk_size, 0);
         if (sent <= 0) {
             throw detail::socket_error(ErrorCode::SendFailed, "send failed");
@@ -59,7 +73,8 @@ void TcpConnection::write_all(std::span<const std::uint8_t> bytes) const {
 }
 
 std::vector<std::uint8_t> TcpConnection::read_exact(std::size_t size) const {
-    if (!valid()) {
+    const auto handle = handle_.load();
+    if (handle == -1) {
         throw NetworkError{ErrorCode::ConnectFailed, "cannot read from invalid TCP connection"};
     }
 
@@ -70,7 +85,7 @@ std::vector<std::uint8_t> TcpConnection::read_exact(std::size_t size) const {
         const int chunk_size =
             remaining > static_cast<std::size_t>(INT_MAX) ? INT_MAX : static_cast<int>(remaining);
         const int received =
-            recv(detail::to_socket_handle(handle_),
+            recv(detail::to_socket_handle(handle),
                  reinterpret_cast<char *>(bytes.data() + received_total), chunk_size, 0);
         if (received <= 0) {
             throw detail::socket_error(ErrorCode::ReceiveFailed, "recv failed");

@@ -120,6 +120,11 @@ void ReceiveServerService::receive_loop(State &state, ReceiveRequest request,
             }
 
             ReceiveService receiver;
+            // Registering this callback closes the race between accept() and
+            // receive(): if stop was requested already, construction invokes
+            // it immediately; otherwise request_stop() interrupts read_exact.
+            std::stop_callback connection_stop{stop_token,
+                                               [&connection] { connection->shutdown(); }};
             auto result = receiver.receive(*connection, request, stop_token);
 
             if (!result) {
