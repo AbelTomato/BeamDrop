@@ -8,9 +8,9 @@
 #include "pybind11/pytypes.h"
 #include "pyerrors.h"
 #include <memory>
-#include <stop_token>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <stop_token>
 
 #include <cstdint>
 #include <filesystem>
@@ -92,55 +92,56 @@ PYBIND11_MODULE(beamdrop_native, m) {
             [beamdrop_error](SendOperation &operation, const std::vector<std::string> &paths,
                              const std::string &host, int port, std::size_t chunk_size,
                              py::object on_progress) {
-            if (port < 0 || port > 65535) {
-                throw py::value_error("port must be in range 0..65535");
-            }
+                if (port < 0 || port > 65535) {
+                    throw py::value_error("port must be in range 0..65535");
+                }
 
-            if (!on_progress.is_none() && !PyCallable_Check(on_progress.ptr())) {
-                throw py::type_error("on_progress must be callable or None");
-            }
+                if (!on_progress.is_none() && !PyCallable_Check(on_progress.ptr())) {
+                    throw py::type_error("on_progress must be callable or None");
+                }
 
-            beamdrop::app::SendRequest request;
-            request.host = host;
-            request.port = port;
-            request.chunk_size = chunk_size;
-            request.paths.reserve(paths.size());
-            for (const auto &path : paths) {
-                request.paths.emplace_back(path);
-            }
-            // Set the token while holding GIL.  Do not copy SendRequest after
-            // releasing GIL: its std::function may own a py::function.
-            request.stop_token = operation.stop_token();
+                beamdrop::app::SendRequest request;
+                request.host = host;
+                request.port = port;
+                request.chunk_size = chunk_size;
+                request.paths.reserve(paths.size());
+                for (const auto &path : paths) {
+                    request.paths.emplace_back(path);
+                }
+                // Set the token while holding GIL.  Do not copy SendRequest after
+                // releasing GIL: its std::function may own a py::function.
+                request.stop_token = operation.stop_token();
 
-            if (!on_progress.is_none()) {
-                py::function callback = py::reinterpret_borrow<py::function>(on_progress);
-                request.progress_callback = [callback = std::move(callback)](
-                                                const beamdrop::app::TransferProgress &progress) {
-                    py::gil_scoped_acquire acquire;
-                    try {
-                        callback(progress);
-                    } catch (py::error_already_set &error) {
-                        const std::string message = error.what();
-                        error.restore();
-                        PyErr_Clear();
-                        throw PythonProgressCallbackError(message);
-                    }
-                };
-            }
+                if (!on_progress.is_none()) {
+                    py::function callback = py::reinterpret_borrow<py::function>(on_progress);
+                    request.progress_callback =
+                        [callback =
+                             std::move(callback)](const beamdrop::app::TransferProgress &progress) {
+                            py::gil_scoped_acquire acquire;
+                            try {
+                                callback(progress);
+                            } catch (py::error_already_set &error) {
+                                const std::string message = error.what();
+                                error.restore();
+                                PyErr_Clear();
+                                throw PythonProgressCallbackError(message);
+                            }
+                        };
+                }
 
-            auto result = beamdrop::app::ServiceResult<beamdrop::app::SendResult>::success({});
-            {
-                py::gil_scoped_release release;
-                result = operation.run(request);
-            }
+                auto result = beamdrop::app::ServiceResult<beamdrop::app::SendResult>::success({});
+                {
+                    py::gil_scoped_release release;
+                    result = operation.run(request);
+                }
 
-            if (!result) {
-                raise_service_error(beamdrop_error, result.error());
-            }
-            return result.value();
+                if (!result) {
+                    raise_service_error(beamdrop_error, result.error());
+                }
+                return result.value();
             },
-            py::arg("paths"), py::arg("host"), py::arg("port"),
-            py::arg("chunk_size") = 1024 * 1024, py::arg("on_progress") = py::none());
+            py::arg("paths"), py::arg("host"), py::arg("port"), py::arg("chunk_size") = 1024 * 1024,
+            py::arg("on_progress") = py::none());
 
     m.def(
         "send",
