@@ -10,6 +10,7 @@
 #include "beamdrop/transfer/TransferError.hpp"
 #include "beamdrop/utils/Sha256.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <string>
 #include <utility>

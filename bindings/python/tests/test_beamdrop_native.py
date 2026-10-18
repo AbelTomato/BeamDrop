@@ -29,6 +29,23 @@ def wait_for_receiver_state(
     )
 
 
+def wait_for_file_sha256(path: Path, expected_digest: bytes, timeout_seconds: float = 2.0) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    last_digest: bytes | None = None
+    last_size: int | None = None
+    while time.monotonic() < deadline:
+        if path.exists():
+            data = path.read_bytes()
+            last_size = len(data)
+            last_digest = hashlib.sha256(data).digest()
+            if last_digest == expected_digest:
+                return
+        time.sleep(0.02)
+    raise AssertionError(
+        f"received file did not reach expected sha256; size={last_size}, sha256={last_digest!r}"
+    )
+
+
 @pytest.fixture
 def receiver(tmp_path: Path):
     service = b.ReceiverService()
@@ -74,14 +91,17 @@ def test_send_reports_progress_and_transfers_file(receiver, tmp_path: Path) -> N
     assert b.TransferStage.FILE_COMPLETED in stages
     assert b.TransferStage.TASK_COMPLETED in stages
 
-    # send() returning only proves the sending side completed. The receiver owns a
-    # separate worker thread, so wait for it to finish writing and verifying the file.
+    # send() returning only proves the sending side wrote to the TCP socket. The
+    # receiver owns a separate worker thread, so wait for durable file contents
+    # before stopping the service; stop() may interrupt an active read.
+    received = received_dir / source.name
+    source_digest = hashlib.sha256(source.read_bytes()).digest()
+    wait_for_file_sha256(received, source_digest)
+
     service.stop()
     wait_for_receiver_state(service, b.ReceiverState.STOPPED)
 
-    received = received_dir / source.name
-    assert received.exists()
-    assert hashlib.sha256(received.read_bytes()).digest() == hashlib.sha256(source.read_bytes()).digest()
+    assert hashlib.sha256(received.read_bytes()).digest() == source_digest
 
 
 def test_send_converts_python_callback_exception_to_internal_error(receiver, tmp_path: Path) -> None:
